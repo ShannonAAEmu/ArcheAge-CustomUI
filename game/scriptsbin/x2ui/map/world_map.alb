@@ -1,0 +1,532 @@
+Script.ReloadScript("SCRIPTS/x2ui/map/world_map_list.lua")
+Script.ReloadScript("SCRIPTS/x2ui/map/expansion.lua")
+Script.ReloadScript("SCRIPTS/x2ui/map/ping.lua")
+local showBottomInfo = true
+function worldmap:OnEnter()
+  if M_PING_CLICKED then
+    worldmap:ResetCursor(false)
+  end
+end
+worldmap:SetHandler("OnEnter", worldmap.OnEnter)
+function worldmap:OnLeave()
+  if M_PING_CLICKED then
+    worldmap:ResetCursor(true)
+  end
+end
+worldmap:SetHandler("OnLeave", worldmap.OnLeave)
+function mapFrame:OnHide()
+  worldmap:Show(false)
+  HideMapTooltip()
+  if M_PING_CLICKED then
+    SetPing(false)
+  end
+end
+mapFrame:SetHandler("OnHide", mapFrame.OnHide)
+local ToggleMap = function(isShow)
+  if isShow == nil then
+    isShow = not mapFrame:IsVisible()
+  end
+  worldmap:Show(isShow)
+  mapFrame:Show(isShow)
+  mapFrame.player.effect:SetStartEffect(isShow)
+  mapFrame.player.effect:SetVisible(mapFrame.player:IsVisible())
+  if isShow then
+    SetPlayerToCenter()
+    mapFrame:Raise()
+	mapFrame:EnablePick(true)
+	mapFrame:SetCloseOnEscape(true)
+    worldmap:SetAlpha(1)
+    for i, v in ipairs(hideMapFrameTargets) do
+      if nil ~= v.Show then
+        v:Show(true)
+      else
+        v:SetVisible(true)
+      end
+    end
+	showBottomInfo = true
+    UpdateConflictZoneInfo()
+	mapFrame:UpdateClimateInfo()
+  end
+end
+ADDON:RegisterContentTriggerFunc(UIC_WORLDMAP, ToggleMap)
+mapFrame.bottomInfoFrame.delay = 0
+function mapFrame:UpdateContinentConflictState()
+  local zoneList = worldmap:GetConflictZoneListByWorldId(self.bottomInfoFrame.zoneId)
+  for i = 1, #zoneList do
+    local zoneId = zoneList[i]
+    local state, _ = worldmap:GetConflictStateByZoneId(zoneId)
+    SetConflictZoneImg(zoneId, state)
+  end
+end
+function mapFrame:HideContinentConflictState()
+  HideConflictZoneImg()
+end
+local GetConflictTextureColor = function(state)
+  if state == HPWS_BATTLE then
+    return TEXTURE_COLOR.MAP_HONOR_POINT_WAR_MIDDLE
+  elseif state == HPWS_WAR then
+    return TEXTURE_COLOR.MAP_HONOR_POINT_WAR_HIGH
+  elseif state == HPWS_PEACE then
+    return TEXTURE_COLOR.MAP_HONOR_POINT_WAR_PEACE
+  end
+  return TEXTURE_COLOR.MAP_HONOR_POINT_WAR_LOW
+end
+function mapFrame.bottomInfoFrame:UpdateConflictZoneState()
+  if self.zoneId == nil or false == showBottomInfo then
+    return
+  end
+  self.delay = 0
+  local peaceTaxMoney = ""
+  local peaceTaxAAPoint = ""
+  if taxCurrency == CURRENCY_GOLD then
+    peaceTaxMoney = X2Dominion:GetPeaceTaxMoney(self.zoneId)
+  elseif taxCurrency == CURRENCY_AA_POINT then
+    peaceTaxAAPoint = X2Dominion:GetPeaceTaxAAPoint(self.zoneId)
+  else
+    peaceTaxMoney = X2Dominion:GetPeaceTaxMoney(self.zoneId)
+    peaceTaxAAPoint = X2Dominion:GetPeaceTaxAAPoint(self.zoneId)
+  end
+  local state, remainTime = worldmap:GetConflictStateByZoneId(self.zoneId)
+  if (state == nil or state == -1) and peaceTaxMoney == "" and peaceTaxAAPoint == "" then
+    self:Show(false)
+    return
+  end
+  self:Show(true)
+  self.bg:SetVisible(false)
+  local conflictParent = self.conflictParent
+  if peaceTaxMoney ~= "" and 0 < tonumber(peaceTaxMoney) or peaceTaxAAPoint ~= "" and 0 < tonumber(peaceTaxAAPoint) then
+    self.peacetax:Show(true)
+    local str = ""
+    local height = FONT_SIZE.MIDDLE
+    if taxCurrency == CURRENCY_GOLD then
+      str = string.format("%s %s|m%d;", locale.territory.peaceMoney, FONT_COLOR_HEX.SKYBLUE, tonumber(peaceTaxMoney))
+    elseif taxCurrency == CURRENCY_AA_POINT then
+      str = string.format("%s %s|p%d;", locale.territory.peaceMoney, FONT_COLOR_HEX.SKYBLUE, tonumber(peaceTaxAAPoint))
+    else
+      if peaceTaxAAPoint == "" then
+        peaceTaxAAPoint = "0"
+      end
+      if peaceTaxMoney == "" then
+        peaceTaxMoney = "0"
+      end
+      str = string.format([[
+%s
+%s|p%d;
+%s|m%d;]], locale.territory.peaceMoney, FONT_COLOR_HEX.SKYBLUE, tonumber(peaceTaxAAPoint), FONT_COLOR_HEX.SKYBLUE, tonumber(peaceTaxMoney))
+      height = FONT_SIZE.MIDDLE * 3 + 10
+    end
+    self.peacetax:SetText(str)
+    self.peacetax:SetExtent(300, height)
+    self.peacetax:SetWidth(self.peacetax:GetLongestLineWidth() + 5)
+    self.bg:SetVisible(true)
+    local color = TEXTURE_COLOR.HONOR_POINT_WAR_LOW
+    self.bg:SetColor(color[1], color[2], color[3], 0.9)
+    conflictParent:RemoveAllAnchors()
+    conflictParent:AddAnchor("BOTTOMLEFT", self, 13, -31)
+  else
+    self.peacetax:Show(false)
+    conflictParent:RemoveAllAnchors()
+    conflictParent:AddAnchor("BOTTOMLEFT", self, 13, -15)
+  end
+  if state == nil or state == -1 then
+    conflictParent:Show(false)
+    return
+  end
+  self.state = state
+  local str = locale.honorPointWar.getZoneStateHud(state)
+  local textColor = GetConflictFontColor(state)
+  local textureColor = GetConflictTextureColor(state)
+  conflictParent:Show(true)
+  conflictParent.title.style:SetColor(textColor[1], textColor[2], textColor[3], textColor[4])
+  conflictParent.title:SetText(str)
+  self.bg:SetVisible(true)
+  self.bg:SetColor(textureColor[1], textureColor[2], textureColor[3], 0.9)
+  local isDangerState = state < HPWS_BATTLE
+  conflictParent.remainTime:Show(not isDangerState)
+  conflictParent.gageBar:Show(isDangerState)
+  conflictParent.stateMark:SetVisible(not isDangerState)
+  if not isDangerState then
+    if 0 < remainTime then
+      conflictParent.remainTime:SetText(GetRemainTimeString(remainTime * 1000))
+    else
+      conflictParent.remainTime:SetText("")
+    end
+  end
+  if state < HPWS_BATTLE then
+    for i = 1, 5 do
+      conflictParent.gageBar.on[i]:SetVisible(i <= state + 1)
+      conflictParent.gageBar.off[i]:SetVisible(i > state + 1)
+    end
+  elseif state == HPWS_BATTLE then
+    conflictParent.stateMark:SetCoords(151, 573, 22, 22)
+  elseif state == HPWS_WAR then
+    conflictParent.stateMark:SetCoords(128, 573, 22, 22)
+  elseif state == HPWS_PEACE then
+    conflictParent.stateMark:SetCoords(174, 573, 22, 22)
+  end
+end
+function mapFrame:HideClimateInfo()
+  if mapFrame.climateFrame then
+    mapFrame.climateFrame:Show(false)
+  end
+end
+local GetClimateText = function(index)
+  local stringTable = {
+    "",
+    GetCommonText("temperate_climate"),
+    GetCommonText("tropical_climate"),
+    GetCommonText("microthermal_climate"),
+    GetCommonText("dry_climate")
+  }
+  return stringTable[index]
+end
+function mapFrame:UpdateClimateInfo()
+  local climateIndex = worldmap:GetClimateInfo(self.bottomInfoFrame.zoneId)
+  if climateIndex == nil or #climateIndex == 0 or false == showBottomInfo then
+    self:HideClimateInfo()
+    return
+  end
+  for i = 1, #self.climateFrame.icon do
+    self.climateFrame.icon[i]:SetVisible(false)
+  end
+  self.climateFrame:Show(true)
+  self.climateFrame.tip = ""
+  local xOffset = 10
+  local climateStr = ""
+  for i = 1, #climateIndex do
+    local coords = mapLocale:GetClimateCoords(#climateIndex == 1, climateIndex[i])
+    if #climateIndex ~= 1 then
+      if climateStr ~= "" then
+        climateStr = string.format([[
+%s
+%s]], climateStr, GetClimateText(climateIndex[i]))
+      else
+        climateStr = GetClimateText(climateIndex[i])
+      end
+    end
+    self.climateFrame.icon[i]:SetVisible(true)
+    self.climateFrame.icon[i]:SetCoords(coords[1], coords[2], coords[3], coords[4])
+    self.climateFrame.icon[i]:SetExtent(coords[3], coords[4])
+    self.climateFrame.icon[i]:AddAnchor("LEFT", self.climateFrame, xOffset, 0)
+    xOffset = xOffset + coords[3]
+  end
+  if climateStr ~= "" then
+    self.climateFrame.tip = string.format([[
+%s
+%s]], GetCommonText("multiple_climate_desc"), climateStr)
+  end
+  self.climateFrame:SetExtent(xOffset + 5, 49)
+end
+local PeacetaxmoneyOnEnter = function()
+  SetTargetAnchorTooltip(locale.map.peace_tax_tip, "TOPLEFT", mapFrame.bottomInfoFrame.peacetax, "BOTTOMLEFT", -2, 10)
+end
+mapFrame.bottomInfoFrame.peacetax:SetHandler("OnEnter", PeacetaxmoneyOnEnter)
+local PeacetaxmoneyOnLeave = function()
+  HideTooltip()
+end
+mapFrame.bottomInfoFrame.peacetax:SetHandler("OnLeave", PeacetaxmoneyOnLeave)
+function mapFrame.bottomInfoFrame:HideConflictZoneState()
+  self:Show(false)
+end
+function mapFrame.bottomInfoFrame:OnUpdate(dt)
+  self.delay = self.delay + dt
+  if self.delay >= 1000 then
+    self:UpdateConflictZoneState()
+  end
+end
+mapFrame.bottomInfoFrame:SetHandler("OnUpdate", mapFrame.bottomInfoFrame.OnUpdate)
+function UpdateConflictZoneInfo(level, id)
+  if level ~= nil then
+    level = level + 1
+  end
+  mapFrame.bottomInfoFrame.level = level or mapFrame.bottomInfoFrame.level
+  mapFrame.bottomInfoFrame.zoneId = id or mapFrame.bottomInfoFrame.zoneId
+  mapFrame.HideContinentConflictState()
+  mapFrame.bottomInfoFrame.peacetax:Show(false)
+  if mapFrame.bottomInfoFrame.level == WMS_WORLD then
+    mapFrame.bottomInfoFrame:HideConflictZoneState()
+    mapFrame:HideClimateInfo()
+  elseif mapFrame.bottomInfoFrame.level == WMS_CONTINENT then
+    mapFrame.bottomInfoFrame:HideConflictZoneState()
+    mapFrame:UpdateContinentConflictState()
+    mapFrame:HideClimateInfo()
+  elseif mapFrame.bottomInfoFrame.level == WMS_ZONE then
+    mapFrame.bottomInfoFrame:UpdateConflictZoneState()
+    mapFrame:UpdateClimateInfo()
+  elseif mapFrame.bottomInfoFrame.level == WMS_CITY then
+    mapFrame.bottomInfoFrame:UpdateConflictZoneState()
+    mapFrame:UpdateClimateInfo()
+  end
+end
+local ConflictParentOnEnter = function()
+  local tooltipTitle
+  local tooltipMsg = locale.honorPointWar.stateTooltip
+  local color = GetConflictFontColorHex(mapFrame.bottomInfoFrame.state)
+  if mapFrame.bottomInfoFrame.state < HPWS_BATTLE then
+    local strState = locale.honorPointWar.getZoneState(mapFrame.bottomInfoFrame.state)
+    tooltipTitle = locale.honorPointWar.stateDangerousTooltipTitle(strState)
+  else
+    tooltipTitle = locale.honorPointWar.getZoneStateTooltipTitle(mapFrame.bottomInfoFrame.state)
+  end
+  if mapFrame.bottomInfoFrame.state == HPWS_PEACE then
+    tooltipMsg = locale.honorPointWar.statePeaceTooltip
+  end
+  local tooltip = string.format([[
+%s%s
+%s%s]], color, tooltipTitle, FONT_COLOR_HEX.SOFT_BROWN, tooltipMsg)
+  SetTargetAnchorTooltip(tooltip, "TOPLEFT", mapFrame.bottomInfoFrame, "BOTTOMLEFT", 0, 0)
+end
+mapFrame.bottomInfoFrame.conflictParent:SetHandler("OnEnter", ConflictParentOnEnter)
+local ConflictParentOnLeave = function()
+  HideTooltip()
+end
+mapFrame.bottomInfoFrame.conflictParent:SetHandler("OnLeave", ConflictParentOnLeave)
+function mapFrame.focusBtn:OnClick()
+  SetPlayerToCenter()
+  if mapFrame.player:IsVisible() then
+    mapFrame.player.effect:SetStartEffect(true)
+  end
+end
+mapFrame.focusBtn:SetHandler("OnClick", mapFrame.focusBtn.OnClick)
+function mapFrame.alphaSlider:OnSliderChanged(arg)
+  mapFrame.alphaSlider:SetValue(arg, false)
+  mapFrame.alphaToggleBtn:SetText(GetTransparencyText() .. mapFrame.alphaSlider:GetValue() .. "%")
+end
+mapFrame.alphaSlider:SetHandler("OnSliderChanged", mapFrame.alphaSlider.OnSliderChanged)
+function mapFrame.alphaToggleBtn:OnClick()
+  mapFrame:EnablePick(false)
+  mapFrame:SetCloseOnEscape(false)
+  worldmap:SetAlpha(mapFrame.alphaSlider:GetValue() / 100)
+  for i, v in ipairs(hideMapFrameTargets) do
+    if nil ~= v.Show then
+	  v:Show(false)
+    else
+  	  v:SetVisible(false)
+    end
+  end
+  showBottomInfo = false
+end
+mapFrame.alphaToggleBtn:SetHandler("OnClick", mapFrame.alphaToggleBtn.OnClick)
+function mapFrame:OnMouseDown(arg)
+end
+mapFrame:SetHandler("OnMouseDown", mapFrame.OnMouseDown)
+function mapFrame:OnMouseUp(arg)
+end
+mapFrame:SetHandler("OnMouseUp", mapFrame.OnMouseUp)
+local tooltipController = worldmap:GetTooltipController()
+tooltipController:SetHandler("OnLeave", HideMapTooltip)
+tooltipController:SetHandler("OnHide", HideMapTooltip)
+local worldMapEvents = {
+  SHOW_WORLDMAP_TOOLTIP = function(tooltipInfo, tooltipCount)
+    ShowMapTooltip(tooltipInfo, tooltipCount, tooltipController, M_TOOLTIP_OFFSET_X, M_TOOLTIP_OFFSET_Y, M_TOOLTIP_OFFSET_REVERSE_X, M_TOOLTIP_OFFSET_REVERSE_Y)
+  end,
+  HIDE_WORLDMAP_TOOLTIP = function()
+    HideMapTooltip()
+  end,
+  SET_EFFECT_ICON_VISIBLE = function(isShow, arg1)
+    if arg1 == mapFrame.player then
+      mapFrame.player.effect:SetVisible(isShow)
+    elseif arg1 == mapFrame.portal then
+      mapFrame.portal.effect:SetVisible(isShow)
+    end
+  end,
+  UPDATE_ZONE_INFO = function()
+    worldmap:UpdateZoneInfo()
+    SetPlayerToCenter()
+  end,
+  UPDATE_NPC_INFO = function()
+    worldmap:UpdateNpcInfo()
+  end,
+  UPDATE_DOODAD_INFO = function()
+    worldmap:UpdateDoodadInfo()
+  end,
+  UPDATE_HOUSING_INFO = function()
+    worldmap:UpdateHousingInfo()
+  end,
+  UPDATE_TELESCOPE_INFO = function()
+    worldmap:UpdateTelescopeInfo()
+  end,
+  UPDATE_TRANSFER_TELESCOPE_INFO = function()
+    worldmap:UpdateTransferTelescopeInfo()
+  end,
+  UPDATE_CARRYING_BACKPACK_SLAVE_INFO = function()
+    worldmap:UpdateCarryingBackpackSlaveInfo()
+  end,
+  UPDATE_FISH_SCHOOL_INFO = function()
+    worldmap:UpdateFishSchoolInfo()
+  end,
+  UPDATE_CORPSE_INFO = function()
+    worldmap:UpdateCorpseInfo()
+  end,
+  UPDATE_MY_SLAVE_POS_INFO = function()
+    worldmap:UpdateMySlaveInfo()
+  end,
+  CLEAR_NPC_INFO = function()
+    worldmap:ClearNpcInfo()
+  end,
+  CLEAR_DOODAD_INFO = function()
+    worldmap:ClearDoodadInfo()
+  end,
+  CLEAR_HOUSING_INFO = function()
+    worldmap:ClearHousingInfo()
+  end,
+  CLEAR_TELESCOPE_INFO = function()
+    worldmap:ClearTelescopeInfo()
+  end,
+  CLEAR_TRANSFER_TELESCOPE_INFO = function()
+    worldmap:ClearTransferTelescopeInfo()
+  end,
+  CLEAR_CARRYING_BACKPACK_SLAVE_INFO = function()
+    worldmap:ClearCarryingBackpackSlaveInfo()
+  end,
+  CLEAR_FISH_SCHOOL_INFO = function()
+    worldmap:ClearFishSchoolInfo()
+  end,
+  CLEAR_CORPSE_INFO = function()
+    worldmap:ClearCorpseInfo()
+  end,
+  CLEAR_MY_SLAVE_POS_INFO = function()
+    worldmap:ClearMySlaveInfo()
+  end,
+  UPDATE_PING_INFO = function()
+    worldmap:UpdatePingInfo()
+  end,
+  ADD_GIVEN_QUEST_INFO = function(arg1, arg2)
+    worldmap:AddGivenQuestInfo(arg1, arg2)
+  end,
+  REMOVE_GIVEN_QUEST_INFO = function(arg1, arg2)
+    worldmap:RemoveGivenQuestInfo(arg1, arg2)
+  end,
+  UPDATE_COMPLETED_QUEST_INFO = function()
+    worldmap:UpdateCompletedQuestInfo()
+  end,
+  CLEAR_COMPLETED_QUEST_INFO = function()
+    worldmap:ClearCompletedQuestInfo()
+  end,
+  ADD_NOTIFY_QUEST_INFO = function(arg)
+    worldmap:AddNotifyQuestInfo(arg)
+  end,
+  REMOVE_NOTIFY_QUEST_INFO = function(arg)
+    worldmap:RemoveNotifyQuestInfo(arg)
+  end,
+  CLEAR_NOTIFY_QUEST_INFO = function()
+    worldmap:ClearNotifyQuestInfo()
+  end,
+  UPDATE_DOMINION_INFO = function()
+    worldmap:UpdateDominionInfo()
+  end,
+  SET_DEFAULT_EXPAND_RATIO = function(isSameZone)
+    if isSameZone then
+      if DEFAULT_EXPANSION_LEVEL == nil then
+        DEFAULT_EXPANSION_LEVEL = X2:GetWorldmapDefaultExpansionLevel() or 3
+      end
+      SetExpandLevel(DEFAULT_EXPANSION_LEVEL)
+    else
+      SetExpandLevel(ZONE_EXPANSION_LEVEL)
+    end
+  end,
+  UI_RELOADED = function()
+    worldmap:ReloadAllInfo()
+  end,
+  LEFT_LOADING = function()
+    worldmap:ReloadAllInfo()
+    SetPlayerToCenter()
+  end,
+  ENTERED_WORLD = function()
+    worldmap:ReloadAllInfo()
+  end,
+  ENTERED_LOADING = function()
+    worldmap:ClearAllInfo()
+  end,
+  UPDATE_TELESCOPE_AREA = function()
+    worldmap:UpdateTelescopeArea()
+  end,
+  UPDATE_TRANSFER_TELESCOPE_AREA = function()
+    worldmap:UpdateTransferTelescopeArea()
+  end,
+  UPDATE_FISH_SCHOOL_AREA = function()
+    worldmap:UpdateFishSchoolArea()
+  end,
+  REMOVE_TELESCOPE_INFO = function(arg)
+    worldmap:RemoveTelescopeInfo(arg)
+  end,
+  REMOVE_TRANSFER_TELESCOPE_INFO = function(arg)
+    worldmap:RemoveTransferTelescopeInfo(arg)
+  end,
+  REMOVE_CARRYING_BACKPACK_SLAVE_INFO = function(arg)
+    worldmap:RemoveCarryingBackpackSlaveInfo(arg)
+  end,
+  REMOVE_FISH_SCHOOL_INFO = function(arg)
+    worldmap:RemoveFishSchoolInfo(arg)
+  end,
+  UPDATE_ZONE_LEVEL_INFO = function(level, id)
+    UpdateConflictZoneInfo(level, id)
+  end,
+  HPW_ZONE_STATE_CHANGE = function()
+    UpdateConflictZoneInfo()
+  end,
+  EXPLORED_REGION_UPDATED = function()
+    worldmap:ExploredRegionUpdated()
+  end
+}
+worldmap:SetHandler("OnEvent", function(this, event, ...)
+  worldMapEvents[event](...)
+end)
+RegistUIEvent(worldmap, worldMapEvents)
+function worldmap:ToggleMapWithPortal(zone_id, x, y, z)
+  ADDON:ShowContent(UIC_WORLDMAP, true)
+  worldmap:ShowPortal(zone_id, x, y, z)
+  mapFrame.portal:SetStartEffect(true)
+  mapFrame.portal.effect:SetStartEffect(true)
+end
+function worldmap:ToggleMapWithCommonFarm(farmGroupType, farmType, x, y)
+  ADDON:ShowContent(UIC_WORLDMAP, true)
+  local coords = npcCoordsList[M_MY_CROPS]
+  local inset = 0
+  if farmGroupType == 1 then
+    inset = M_ICON_EXTENT * 2
+  elseif farmGroupType == 2 then
+    inset = M_ICON_EXTENT * 1
+  end
+  mapFrame.commonFarm:SetCoords(coords[1], coords[2] + inset, coords[3], coords[4])
+  worldmap:ShowCommonFarm(farmGroupType, farmType, x, y)
+  mapFrame.commonFarm:SetStartEffect(true)
+end
+function worldmap:OnWheelUp(arg)
+  local seleted = GetExpandLevel()
+  seleted = math.min(seleted + 1, #mapFrame.expandBtn)
+  SetExpandLevel(seleted, true)
+end
+worldmap:SetHandler("OnWheelUp", worldmap.OnWheelUp)
+function worldmap:OnWheelDown(arg)
+  local seleted = GetExpandLevel()
+  seleted = math.max(seleted - 1, 1)
+  SetExpandLevel(seleted, true)
+end
+worldmap:SetHandler("OnWheelDown", worldmap.OnWheelDown)
+function ToggleMapWithQuest(qType)
+  local decalIndex = GetDecalState(qType)
+  ADDON:ShowContent(UIC_WORLDMAP, true)
+  worldmap:ShowQuest(qType, decalIndex or 0, decalIndex ~= nil)
+end
+local tempMainQuestReadyCoord = {
+  216,
+  24,
+  24,
+  24
+}
+local tempNormalQuestReadyCoord = {
+  216,
+  72,
+  24,
+  24
+}
+local tempNotifyColor = {
+  255,
+  255,
+  255,
+  AREA_COLOR_ALPHA
+}
+worldmap:SetTempNotifyCoord(true, tempMainQuestReadyCoord)
+worldmap:SetTempNotifyCoord(false, tempNormalQuestReadyCoord)
+worldmap:SetTempNotifyColor(tempNotifyColor)

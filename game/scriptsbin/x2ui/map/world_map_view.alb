@@ -1,0 +1,255 @@
+hideMapFrameTargets = {}
+local transparency = "Transparency "
+if X2Locale:GetLocale() == "de" then
+  transparency = "Transparenz "
+elseif X2Locale:GetLocale() == "fr" then
+  transparency = "Transparence "
+elseif X2Locale:GetLocale() == "ru" then
+  transparency = "Прозрачность "
+end
+function GetTransparencyText()
+  return transparency
+end
+local sideMargin, titleMargin, bottomMargin = GetWindowMargin()
+local WORLDMAP_VISIBLE_WIDTH = 928
+local WORLDMAP_VISIBLE_HEIGHT = 556
+mapFrame = CreateEmptyWindow("mapFrame", "UIParent")
+mapFrame:SetExtent(1170, 643)
+mapFrame:AddAnchor("CENTER", "UIParent", 0, 0)
+mapFrame:Show(false)
+mapFrame:SetSounds("world_map")
+mapFrame:SetCloseOnEscape(true)
+mapFrame:EnableUIAnimation()
+function mapFrame:InsertHideTarget(target)
+  table.insert(hideMapFrameTargets, target)
+end
+local bg = mapFrame:CreateImageDrawable("ui/map/frame_map.dds", "background")
+bg:SetCoords(0, 0, 990, 542)
+bg:AddAnchor("TOPLEFT", mapFrame, 0, 0)
+bg:AddAnchor("BOTTOMRIGHT", mapFrame, 0, 0)
+bg:SetSnap(false)
+mapFrame:InsertHideTarget(bg)
+local titleBar = CreateTitleBar(mapFrame:GetId() .. ".titleBar", mapFrame)
+titleBar:SetTitleText(locale.map.title)
+titleBar:SetTitleInset(0, 2, 0, 0)
+titleBar.titleStyle:SetColor(0.23, 0.12, 0, 1)
+titleBar.titleStyle:SetShadow(false)
+titleBar.titleStyle:SetFont(FONT_PATH.SNAIL, FONT_SIZE.XLARGE)
+titleBar.closeButton:AddAnchor("TOPRIGHT", mapFrame, 0, 5)
+mapFrame:InsertHideTarget(titleBar)
+local guideLabel = mapFrame:CreateChildWidget("label", "guideLabel", 0, true)
+guideLabel:SetAutoResize(true)
+guideLabel:SetHeight(FONT_SIZE.MIDDLE)
+guideLabel:AddAnchor("BOTTOMLEFT", mapFrame, 20, -15)
+guideLabel:SetText(locale.map.guide)
+mapFrame:InsertHideTarget(guideLabel)
+ApplyTextColor(guideLabel, FONT_COLOR.DEFAULT)
+mapWindow = mapFrame:CreateChildWidget("emptywidget", "mapWindow", 0, true)
+mapWindow:SetExtent(WORLDMAP_VISIBLE_WIDTH, WORLDMAP_VISIBLE_HEIGHT)
+mapWindow:AddAnchor("TOPLEFT", mapFrame, "TOPLEFT", 25, 43)
+mapWindow:EnableScroll(true)
+mapWindow:Show(true)
+worldmap = mapWindow:CreateChildWidget("worldmap", "worldmap", 0, true)
+worldmap:Show(false)
+worldmap:SetExtent(WORLDMAP_VISIBLE_WIDTH, WORLDMAP_VISIBLE_HEIGHT)
+worldmap:AddAnchor("TOPLEFT", mapWindow, "TOPLEFT", 0, 0)
+local playerDrawable = worldmap:CreateImageDrawable("ui/map/icon/player_cursor.dds", "overlay")
+playerDrawable:SetExtent(32, 32)
+playerDrawable:SetCoords(0, 0, 32, 32)
+playerDrawable:SetColor(1, 1, 1, 1)
+worldmap:SetPlayerDrawable(playerDrawable)
+mapFrame.player = playerDrawable
+mapFrame.player.effect = CreateEffect(worldmap, playerDrawable)
+mapFrame.player.effect:SetRepeatCount(4)
+local portalDrawable = worldmap:CreateEffectDrawable(M_ICON_PATH, "overlay")
+portalDrawable:SetExtent(M_ICON_EXTENT, M_ICON_EXTENT)
+portalDrawable:SetCoords(npcCoordsList[M_PORTAL][1], npcCoordsList[M_PORTAL][2], M_ICON_EXTENT, M_ICON_EXTENT)
+portalDrawable:SetEffectPriority(1, "alpha", 0.5, 0.4)
+portalDrawable:SetMoveRepeatCount(0)
+portalDrawable:SetMoveEffectType(1, "right", 0, 0, 0.4, 0.4)
+portalDrawable:SetMoveEffectEdge(1, 0.3, 0.5)
+portalDrawable:SetMoveEffectType(2, "right", 0, 0, 0.4, 0.4)
+portalDrawable:SetMoveEffectEdge(2, 0.5, 0.3)
+portalDrawable:SetMoveRotate(false)
+portalDrawable:SetVisible(false)
+worldmap:SetPortalDrawable(portalDrawable)
+mapFrame.portal = portalDrawable
+mapFrame.portal.effect = CreateEffect(worldmap, portalDrawable, "portal")
+mapFrame.portal.effect:SetRepeatCount(0)
+mapFrame.portal.effect:SetVisible(false)
+local commonFarmDrawable = worldmap:CreateEffectDrawable(M_ICON_PATH, "overlay")
+commonFarmDrawable:SetExtent(M_ICON_EXTENT, M_ICON_EXTENT)
+commonFarmDrawable:SetCoords(npcCoordsList[M_COMMON_FARM][1], npcCoordsList[M_COMMON_FARM][2], M_ICON_EXTENT, M_ICON_EXTENT)
+commonFarmDrawable:SetVisible(false)
+commonFarmDrawable:SetEffectPriority(1, "alpha", 0.5, 0.4)
+commonFarmDrawable:SetMoveRepeatCount(0)
+commonFarmDrawable:SetMoveEffectType(1, "right", 0, 0, 0.4, 0.4)
+commonFarmDrawable:SetMoveEffectEdge(1, 0.3, 0.5)
+commonFarmDrawable:SetMoveEffectType(2, "right", 0, 0, 0.4, 0.4)
+commonFarmDrawable:SetMoveEffectEdge(2, 0.5, 0.3)
+commonFarmDrawable:SetMoveRotate(false)
+worldmap:SetCommonFarmDrawable(commonFarmDrawable)
+mapFrame.commonFarm = commonFarmDrawable
+function mapFrame:ShowProc()
+  local height = mapFrame.scrollFilterWindow.firstHeight + mapFrame.scrollFilterWindow.npcFolder:GetHeight() + mapFrame.scrollFilterWindow.doodadFolder:GetHeight() + mapFrame.scrollFilterWindow.houseFolder:GetHeight()
+  ResetScroll(mapFrame.scrollFilterWindow, height)
+end
+local alphaSlider = CreateSlider("alphaSliderbar", mapFrame)
+alphaSlider:AddAnchor("BOTTOMRIGHT", mapFrame, -localeView.worldMap.focusAndPingButton.offsetX, -sideMargin * 1.8)
+alphaSlider:SetWidth(localeView.worldMap.focusAndPingButton.width)
+alphaSlider:SetMinMaxValues(20, 80)
+alphaSlider:SetStep(10)
+alphaSlider:SetInitialValue(50)
+mapFrame.alphaSlider = alphaSlider
+mapFrame:InsertHideTarget(mapFrame.alphaSlider)
+local alphaToggleBtn = mapFrame:CreateChildWidget("button", "alphaToggleBtn", 0, true)
+ApplyButtonSkin(alphaToggleBtn, BUTTON_BASIC.DEFAULT)
+alphaToggleBtn:SetWidth(localeView.worldMap.focusAndPingButton.width)
+alphaToggleBtn:AddAnchor("BOTTOM", alphaSlider, "TOP", 0, -2)
+alphaToggleBtn:SetText(GetTransparencyText() .. alphaSlider:GetValue() .. "%")
+mapFrame:InsertHideTarget(alphaToggleBtn)
+local pingBtn = mapFrame:CreateChildWidget("button", "pingBtn", 0, true)
+ApplyButtonSkin(pingBtn, BUTTON_BASIC.DEFAULT)
+pingBtn:SetWidth(localeView.worldMap.focusAndPingButton.width)
+pingBtn:SetText(locale.map.pingPosition)
+pingBtn:AddAnchor("BOTTOM", alphaToggleBtn, "TOP", 0, -2)
+mapFrame:InsertHideTarget(pingBtn)
+local focusBtn = mapFrame:CreateChildWidget("button", "focusBtn", 0, true)
+ApplyButtonSkin(focusBtn, BUTTON_BASIC.DEFAULT)
+focusBtn:SetWidth(localeView.worldMap.focusAndPingButton.width)
+focusBtn:SetText(locale.map.lookMyPosition)
+focusBtn:AddAnchor("BOTTOM", pingBtn, "TOP", 0, -2)
+mapFrame:InsertHideTarget(focusBtn)
+local changeMapScaleLabel = mapFrame:CreateChildWidget("label", "changeMapScaleLabel", 0, true)
+changeMapScaleLabel:SetText(locale.map.changeMapScale)
+changeMapScaleLabel:SetExtent(80, FONT_SIZE.LARGE)
+changeMapScaleLabel:AddAnchor("BOTTOMLEFT", focusBtn, "TOPLEFT", 6, -7)
+changeMapScaleLabel.style:SetFontSize(FONT_SIZE.LARGE)
+ApplyTextColor(changeMapScaleLabel, FONT_COLOR.TITLE)
+mapFrame:InsertHideTarget(changeMapScaleLabel)
+mapFrame.expandBtn = {}
+for i = 1, 3 do
+  local expandBtn = mapFrame:CreateChildWidget("button", "expandBtn", i, true)
+  ApplyButtonSkin(expandBtn, BUTTON_CONTENTS.MAP_SCALE[i])
+  expandBtn:SetExtent(15, 15)
+  mapFrame:InsertHideTarget(expandBtn)
+  if i == 1 then
+    expandBtn:AddAnchor("LEFT", changeMapScaleLabel, "RIGHT", sideMargin / 2, 0)
+  else
+    expandBtn:AddAnchor("LEFT", mapFrame.expandBtn[i - 1], "RIGHT", 5, 0)
+  end
+  function expandBtn:OnClick()
+    SetExpandLevel(i, true)
+  end
+  expandBtn:SetHandler("OnClick", expandBtn.OnClick)
+  mapFrame.expandBtn[i] = expandBtn
+end
+worldmap:SetTooltipColor(M_QUEST_OBJECTIVE_TOOLTIP_COLOR, M_NPC_NICKNAME_TOOLTIP_COLOR)
+function CreateBottomInfoFrame(parent)
+  local bottomInfoFrame = parent:CreateChildWidget("emptywidget", "bottomInfoFrame", 0, true)
+  bottomInfoFrame:SetExtent(200, 100)
+  bottomInfoFrame:AddAnchor("BOTTOMLEFT", parent, "BOTTOMLEFT", 18, -37)
+  bottomInfoFrame:Clickable(false)
+  local bg = bottomInfoFrame:CreateImageDrawable("ui/map/frame_map.dds", "background")
+  bg:SetCoords(218, 573, 409, 155)
+  bg:SetExtent(500, 200)
+  bg:SetColor(0, 0, 0, 0.8)
+  bg:AddAnchor("BOTTOMLEFT", bottomInfoFrame, 0, 0)
+  bg:SetVisible(true)
+  bottomInfoFrame.bg = bg
+  local conflictParent = bottomInfoFrame:CreateChildWidget("emptywidget", "conflictParent", 0, true)
+  conflictParent:SetExtent(180, 35)
+  conflictParent:Clickable(false)
+  local title = conflictParent:CreateChildWidget("label", "title", 0, true)
+  title:SetHeight(FONT_SIZE.XLARGE)
+  title:SetAutoResize(true)
+  title:AddAnchor("TOPLEFT", conflictParent, 0, 0)
+  title.style:SetAlign(ALIGN_LEFT)
+  title.style:SetFont(FONT_PATH.SNAIL, FONT_SIZE.XLARGE)
+  local stateMark = title:CreateImageDrawable("ui/map/frame_map.dds", "background")
+  stateMark:SetCoords(128, 573, 22, 22)
+  stateMark:SetExtent(22, 22)
+  stateMark:SetColor(1, 1, 1, 1)
+  stateMark:AddAnchor("TOPLEFT", title, "TOPRIGHT", 0, -1)
+  stateMark:SetVisible(true)
+  conflictParent.stateMark = stateMark
+  local remainTime = conflictParent:CreateChildWidget("label", "remainTime", 0, true)
+  remainTime:SetHeight(FONT_SIZE.MIDDLE)
+  remainTime:SetAutoResize(true)
+  remainTime:AddAnchor("TOPLEFT", title, "BOTTOMLEFT", 2, 4)
+  remainTime.style:SetAlign(ALIGN_LEFT)
+  ApplyTextColor(remainTime, FONT_COLOR.SOFT_BROWN)
+  local GAGE_BAR_WIDTH = 157
+  local gageBar = conflictParent:CreateChildWidget("emptywidget", "gageBar", 0, true)
+  gageBar:SetExtent(GAGE_BAR_WIDTH, 25)
+  gageBar:AddAnchor("TOPLEFT", title, "BOTTOMLEFT", -2, -1)
+  gageBar:Show(false)
+  local gageBg = gageBar:CreateNinePartDrawable(TEXTURE_PATH.HUD, "background")
+  gageBg:SetCoords(506, 319, 13, 10)
+  gageBg:SetInset(6, 5, 6, 4)
+  gageBg:SetExtent(GAGE_BAR_WIDTH, 13)
+  gageBg:AddAnchor("LEFT", gageBar, "LEFT", 0, 0)
+  gageBg:SetVisible(true)
+  local GAGE_STEP_WIDTH = 29
+  gageBar.on = {}
+  gageBar.off = {}
+  for i = 1, 5 do
+    local startPosX = 4 + (i - 1) * (GAGE_STEP_WIDTH + 1)
+    local on = gageBar:CreateImageDrawable(TEXTURE_PATH.HUD, "background")
+    on:SetCoords(548, 323, 18, 6)
+    on:SetExtent(GAGE_STEP_WIDTH, 6)
+    on:AddAnchor("LEFT", gageBg, startPosX, 0)
+    on:SetVisible(false)
+    gageBar.on[i] = on
+    local off = gageBar:CreateImageDrawable(TEXTURE_PATH.HUD, "background")
+    off:SetCoords(523, 323, 18, 6)
+    off:SetExtent(GAGE_STEP_WIDTH, 6)
+    off:AddAnchor("LEFT", gageBg, startPosX, 0)
+    off:SetVisible(true)
+    gageBar.off[i] = off
+  end
+  local peacetax = bottomInfoFrame:CreateChildWidget("textbox", "peacetax", 0, true)
+  peacetax:AddAnchor("BOTTOMLEFT", bottomInfoFrame, 15, -13)
+  peacetax:SetExtent(180, FONT_SIZE.MIDDLE)
+  if taxCurrency == CURRENCY_GOLD_WITH_AA_POINT then
+    peacetax:SetLineSpace(TEXTBOX_LINE_SPACE.MIDDLE)
+  end
+  peacetax.style:SetAlign(ALIGN_LEFT)
+end
+function CreateClimateFrmae(parent)
+  local climateFrame = parent:CreateChildWidget("emptywidget", "climateFrame", 0, true)
+  climateFrame:SetExtent(200, 49)
+  local posX = parent:GetWidth() - WORLDMAP_VISIBLE_WIDTH - 25
+  climateFrame:AddAnchor("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -posX, -45)
+  local coords = mapLocale.coords.iconBg
+  local bg = climateFrame:CreateNinePartDrawable(BUTTON_TEXTURE_PATH.MAP, "background")
+  bg:SetCoords(coords[1], coords[2], coords[3], coords[4])
+  bg:SetInset(14, 15, 10, 20)
+  bg:AddAnchor("TOPLEFT", climateFrame, 0, 0)
+  bg:AddAnchor("BOTTOMRIGHT", climateFrame, 0, 0)
+  climateFrame.tip = ""
+  local function OnEnter()
+    if climateFrame.tip == "" then
+      return
+    end
+    SetTooltip(climateFrame.tip, climateFrame, true, true)
+  end
+  climateFrame:SetHandler("OnEnter", OnEnter)
+  local function OnLeave()
+    if climateFrame.tip == "" then
+      return
+    end
+    HideTooltip()
+  end
+  climateFrame:SetHandler("OnLeave", OnLeave)
+  climateFrame.icon = {}
+  for i = 1, 4 do
+    local icon = climateFrame:CreateImageDrawable(BUTTON_TEXTURE_PATH.MAP, "overlay")
+    icon:SetVisible(false)
+    climateFrame.icon[i] = icon
+  end
+end
+CreateClimateFrmae(mapFrame)
+CreateBottomInfoFrame(mapFrame)
+mapFrame:InsertHideTarget(mapFrame.climateFrame)
+mapFrame:InsertHideTarget(mapFrame.bottomInfoFrame)
