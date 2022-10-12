@@ -1,0 +1,136 @@
+function CreateCastingBar(id, parent, unit)
+  local frame = SetViewOfCastingBar(id, parent, unit)
+  frame.unit = unit
+  frame.spellName = nil
+  frame.eventProc = nil
+  function frame:ShowAll()
+    frame.statusBar:Show(true)
+    frame.text:Show(true)
+    frame:Show(true)
+  end
+  function frame:HideAll(force, isSucceed)
+    local fadeOutTime = 200
+    if force == true then
+      fadeOutTime = 0
+    end
+    if isSucceed then
+      fadeOutTime = 2000
+    end
+    frame.statusBar:Show(false, fadeOutTime)
+    frame.text:Show(false, fadeOutTime)
+    frame:Show(false, fadeOutTime)
+    frame.startAnim_condition = false
+    frame.endAnim_condition = false
+    frame.prev_curtime = nil
+  end
+  function frame:OnUpdate()
+    local spellName, castingTime, currCastingTime, showCastingTime = X2Unit:UnitCastingInfo(self.unit)
+    if showCastingTime == false then
+      self:HideAll(true)
+      return
+    end
+    if spellName ~= nil then
+      frame.statusBar:SetMinMaxValues(0, castingTime)
+      frame.statusBar:SetValue(currCastingTime)
+	  frame.text:SetCastingText(spellName .. ("   ") .. string.format("%.1f / ", currCastingTime/1000) .. string.format("%.1f", castingTime)/1000)
+      if self.prev_curtime == nil then
+        self.prev_curtime = currCastingTime
+      end
+      if not self.startAnim_condition then
+        if currCastingTime < self.prev_curtime and currCastingTime <= castingTime * 0.99 then
+          self.startAnim_condition = true
+          frame.anim_direction = "down"
+          self:StartAnmation(castingTime * 0.99 / 1000)
+        elseif currCastingTime > self.prev_curtime and currCastingTime >= castingTime * 0.01 then
+          self.startAnim_condition = true
+          frame.anim_direction = "up"
+          self:StartAnmation((currCastingTime - castingTime * 0.01) / 1000)
+        end
+      end
+      if self.startAnim_condition and not self.endAnim_condition then
+        if currCastingTime < self.prev_curtime and currCastingTime <= castingTime * 0.08 then
+          self.endAnim_condition = true
+          self:EndAnmation(currCastingTime - castingTime * 0.08 / 1000)
+        elseif currCastingTime > self.prev_curtime and currCastingTime >= castingTime * 0.9 then
+          self.endAnim_condition = true
+          self:EndAnmation((castingTime - castingTime * 0.9) / 1000)
+        end
+      end
+    end
+  end
+  function frame:Refresh()
+    if frame.unit == "none" then
+      frame:HideAll(true)
+      return
+    end
+    local spellName, castingTime, currCastingTime, showCastingTime = X2Unit:UnitCastingInfo(self.unit)
+    if spellName ~= nil and showCastingTime == true then
+      frame.text:SetCastingText(spellName)
+      frame:ShowAll()
+    else
+      frame:HideAll()
+    end
+  end
+  local castingBarEvents = {
+    SPELLCAST_START = function(spellName, castingTime, caster)
+      if caster ~= frame.unit then
+        return
+      end
+      if frame.spellName ~= nil then
+        frame.spellName = ""
+      end
+      frame.spellName = spellName
+      frame.text:SetCastingText(spellName)
+      frame.ShowAll()
+    end,
+    SPELLCAST_STOP = function(caster)
+      if caster ~= frame.unit then
+        return
+      end
+      if frame.spellName == nil then
+        frame.spellName = ""
+      end
+      frame.text:SetCastingText(frame.spellName .. " " .. locale.castingBar.stop)
+      frame.HideAll()
+    end,
+    SPELLCAST_SUCCEEDED = function(caster)
+      if caster ~= frame.unit then
+        return
+      end
+      frame.statusBar:SetMinMaxValues(0, 1)
+      frame.statusBar:SetValue(1)
+      frame.spellName = nil
+      if frame.anim_direction ~= "down" then
+        frame:flashAnmation()
+        frame:HideAll(false, true)
+      else
+        frame.HideAll()
+      end
+    end
+  }
+  function frame:SetEventProc(handler)
+    frame.eventProc = handler
+  end
+  function frame:SetVisibleCastingBar(visible)
+    if frame == nil then
+      return
+    end
+    if visible then
+      frame:SetHandler("OnEvent", function(this, event, ...)
+        if castingBarEvents[event] ~= nil then
+          castingBarEvents[event](...)
+        end
+        if self.eventProc ~= nil and self.eventProc[event] ~= nil then
+          self.eventProc[event](...)
+        end
+      end)
+      frame:SetHandler("OnUpdate", frame.OnUpdate)
+    else
+      frame:ReleaseHandler("OnEvent")
+      frame:ReleaseHandler("OnUpdate")
+      frame.HideAll()
+    end
+  end
+  frame:SetVisibleCastingBar(true)
+  return frame
+end
