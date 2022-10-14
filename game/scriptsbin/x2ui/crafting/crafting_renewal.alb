@@ -1,0 +1,896 @@
+local craftInfoRenewal = {}
+craftInfoRenewal.doodadId = 0
+craftInfoRenewal.isDoodadCrafting = false
+local function AddAuctionSearchIconBtn(button, searchItemName)
+  local ReadingGlassIconBtnLeftClickFunc = function()
+	ToggleAuctionWindow(true)
+	X2Auction:SearchAuctionArticle(1, 0, 0, 1, 0, false, searchItemName)
+  end
+  ButtonOnClickHandler(button, ReadingGlassIconBtnLeftClickFunc)
+end
+function craftInfoRenewal:GetAllActAbilityGroups()
+  local types = X2Craft:EnumActabilityGroupTypes()
+  local retTypes = {}
+  local actAbilityGroupNames = {}
+  local groupIconPaths = {}
+  local index = 1
+  for i = 1, #types do
+    local info = X2Craft:GetActabilityGroupInfoByGroupType(types[i])
+    if info.visible == true then
+      retTypes[index] = types[i]
+      actAbilityGroupNames[index] = info.name
+      groupIconPaths[index] = info.icon_path
+      index = index + 1
+    end
+  end
+  return retTypes, actAbilityGroupNames, groupIconPaths
+end
+function craftInfoRenewal:GetCurrentActAbilityGroups()
+  local types = X2Craft:EnumActabilityGroupTypesFromCurrentDoodad()
+  local actAbilityGroupNames = {}
+  local groupIconPaths = {}
+  for i = 1, #types do
+    local info = X2Craft:GetActabilityGroupInfoByGroupType(types[i])
+    actAbilityGroupNames[i] = info.name
+    groupIconPaths[i] = info.icon_path
+  end
+  return types, actAbilityGroupNames, groupIconPaths
+end
+function craftInfoRenewal:GetCurDoodadEnableActabilityGroups()
+  return X2Craft:EnumActabilityGroupTypesFromCurrentDoodad()
+end
+function craftInfoRenewal:GetActAbilitysGroups()
+  local actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths
+  if self.isDoodadCrafting then
+    actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths = self:GetCurrentActAbilityGroups()
+  else
+    actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths = self:GetAllActAbilityGroups()
+  end
+  return actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths
+end
+function craftInfoRenewal:GetActAbilityCategories(actAbilityGroupType)
+  local actAbilityCategoryTypes
+  if self.isDoodadCrafting then
+    actAbilityCategoryTypes = X2Craft:GetActabilityCategoryTypesFromCurrentDoodad(actAbilityGroupType)
+  else
+    actAbilityCategoryTypes = X2Craft:GetActabilityCategoryTypesGroupType(actAbilityGroupType)
+  end
+  return actAbilityCategoryTypes
+end
+function craftInfoRenewal:GetCraftTypes(actAbilityGroupType, actAbilityCategoryType, keyword, isCraftSearch)
+  local craftTypes
+  if isCraftSearch == nil then
+    isCraftSearch = true
+  end
+  if self.isDoodadCrafting then
+    if keyword == "" then
+      craftTypes = X2Craft:GetCraftTypesFromCurrentDoodad(actAbilityGroupType, actAbilityCategoryType)
+    elseif isCraftSearch then
+      craftTypes = X2Craft:GetCurrentDoodadCraftTypesInGroupByName(actAbilityGroupType, actAbilityCategoryType, keyword)
+    else
+      craftTypes = X2Craft:GetCurrentDoodadCraftTypesByMaterialName(actAbilityGroupType, actAbilityCategoryType, keyword)
+    end
+  elseif keyword == "" then
+    craftTypes = X2Craft:GetActabilityCategoryCraftTypesByTypes(actAbilityGroupType, actAbilityCategoryType)
+  elseif isCraftSearch then
+    craftTypes = X2Craft:GetAllCraftTypesInGroupByName(actAbilityGroupType, actAbilityCategoryType, keyword)
+  else
+    craftTypes = X2Craft:GetCraftTypesByMaterialName(actAbilityGroupType, actAbilityCategoryType, keyword)
+  end
+  return craftTypes
+end
+function craftInfoRenewal:SetDoodad(doodadId, count)
+  if doodadId == nil or doodadId == 0 or count == nil or count == 0 then
+    self.doodadId = 0
+    self.isDoodadCrafting = false
+  else
+    self.doodadId = doodadId
+    self.isDoodadCrafting = true
+  end
+end
+function craftInfoRenewal:GetDoodadId()
+  return self.doodadId
+end
+local function IsPossibleCraft(craftType, actAbilityGroupType, mileageCount, keyword, isCraftSearch)
+  if actAbilityGroupType == nil then
+    return false, false, false, false
+  end
+  local matchDoodad = false
+  local laborpower_satisfied = false
+  local mileage_satisfied = false
+  if craftInfoRenewal.isDoodadCrafting then
+    local actAbilityGroupTypes, _, _ = craftInfoRenewal:GetActAbilitysGroups()
+    for j = 1, #actAbilityGroupTypes do
+      local craftTypes = craftInfoRenewal:GetCraftTypes(actAbilityGroupTypes[j], actAbilityGroupType, keyword, isCraftSearch)
+      if craftTypes ~= nil then
+        for i = 1, #craftTypes do
+          if craftTypes[i] == craftType then
+            matchDoodad = true
+            break
+          end
+        end
+      end
+    end
+  end
+  local subtract = tonumber(X2Util:StrNumericSub(X2Player:GetBmPoint(), tostring(mileageCount)))
+  if 0 <= subtract then
+    mileage_satisfied = true
+  end
+  return matchDoodad, mileage_satisfied
+end
+function CreateCraftingWindowRenewal(id, parent)
+  local window = SetViewOfCraftingWindowRenewal(id, parent)
+  local abilityGroupPage = window.abilityGroupPage
+  local detailPage = window.detailPage
+  local searchBar = window.searchBar
+  local highRankFrame = detailPage.highRankFrame
+  local productInfoFrame = detailPage.productInfoFrame
+  local materialFrame = detailPage.materialFrame
+  local categoryList = detailPage.categoryList
+  local countList = detailPage.categoryList.countList
+  local buttonFrame = detailPage.buttonFrame
+  local selActAbilityGroupIdx = 0
+  local curCraftType = 0
+  local highRankCraftInfo
+  local searchKeyword = ""
+  local function FillCategoryCombobox(isCraftStart)
+    local actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths = craftInfoRenewal:GetActAbilitysGroups()
+    local names = {}
+    local types = {}
+    if not isCraftStart then
+      names[1] = GetUIText(INVEN_TEXT, "allTab")
+      types[1] = 0
+    end
+    for i = 1, #actAbilityGroupTypes do
+      names[#names + 1] = actAbilityGroupNames[i]
+      types[#names] = actAbilityGroupTypes[i]
+    end
+    searchBar.combobox.dropdownItem = names
+    searchBar.combobox.types = types
+    searchBar.combobox:Select(CRAFT_ALL_CATEGORY)
+    if #searchBar.combobox.types > 10 then
+      searchBar.combobox.limitItemCount = 10
+    else
+      searchBar.combobox.limitItemCount = #searchBar.combobox.types
+    end
+  end
+  function searchBar.combobox:SelectedProc(selIndex)
+    selActAbilityGroupIdx = self.types[selIndex]
+  end
+  local function FillCategoriesMaxCraftCount()
+    countList:ClearItem()
+    local infos = categoryList.content:GetViewItemsInfo()
+    for i = 1, #infos do
+      local value = infos[i].value
+      if value == 0 then
+        countList:AppendItem("", i)
+      else
+        local craftCount = X2Craft:GetExecutableCraftCount(value)
+        local countStr = ""
+        if craftCount > CRAFT_MAX_COUNT.VIEW_CRAFTABLE then
+          countStr = string.format("(%d)", CRAFT_MAX_COUNT.VIEW_CRAFTABLE)
+        elseif 0 < craftCount then
+          countStr = string.format("(%d)", craftCount)
+        end
+        countList:AppendItem(countStr, i)
+      end
+    end
+    countList:Show(true)
+  end
+  local function CategoryOnListboxToggled(self)
+    FillCategoriesMaxCraftCount()
+    categoryList:SetMinMaxValues("vert", 0, categoryList.content:GetMaxTop())
+  end
+  categoryList.content:SetHandler("OnListboxToggled", CategoryOnListboxToggled)
+  function categoryList:ProcSliderChanged()
+    FillCategoriesMaxCraftCount()
+  end
+  local function FillCategories(actAbilityGroupIdx)
+    categoryList.content:ClearItem()
+    if actAbilityGroupIdx == nil then
+      return
+    end
+    selActAbilityGroupIdx = actAbilityGroupIdx
+    abilityGroupPage:Show(false)
+    detailPage:Show(true)
+    countList:Show(false)
+    local selectIdx = 0
+    if searchBar.combobox.types ~= nil then
+      for i = 1, #searchBar.combobox.types do
+        if searchBar.combobox.types[i] == actAbilityGroupIdx then
+          selectIdx = i
+          break
+        end
+      end
+    end
+    searchBar.combobox:Select(selectIdx)
+    local function FillCategory(actAbilityGroupIdx, listboxTable)
+      local existCraftTypes = false
+      local categoryCount = 1
+      local categories = craftInfoRenewal:GetActAbilityCategories(actAbilityGroupIdx)
+      if categories == nil then
+        return
+      end
+      for depth1 = 1, #categories do
+        local categoryIdx = categories[depth1]
+        local craftSearch = searchBar.conditionRadio:GetChecked() == CRAFT_SEARCH_CONDITION.PRODUCT
+        local craftTypes = craftInfoRenewal:GetCraftTypes(actAbilityGroupIdx, categoryIdx, searchKeyword, craftSearch)
+        local opened = false
+        if searchKeyword ~= "" then
+          opened = true
+        end
+        if craftTypes ~= nil then
+          local info = X2Craft:GetActabilityCategoryInfoByTypes(categoryIdx)
+          listboxTable[categoryCount] = {}
+          listboxTable[categoryCount].text = info.name or "nil"
+          listboxTable[categoryCount].opened = opened
+          listboxTable[categoryCount].child = {}
+          for depth2 = 1, #craftTypes do
+            listboxTable[categoryCount].child[depth2] = {}
+            listboxTable[categoryCount].child[depth2].text = X2Craft:GetCraftName(craftTypes[depth2])
+            listboxTable[categoryCount].child[depth2].value = craftTypes[depth2]
+          end
+          categoryCount = categoryCount + 1
+          existCraftTypes = true
+        end
+      end
+      return existCraftTypes
+    end
+    local listboxTable = {}
+    local existCraftTypes = false
+    if actAbilityGroupIdx ~= 0 then
+      existCraftTypes = FillCategory(actAbilityGroupIdx, listboxTable)
+    else
+      local actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths = craftInfoRenewal:GetActAbilitysGroups()
+      local groupCount = 1
+      for depth1 = 1, #actAbilityGroupTypes do
+        local opened = false
+        if searchKeyword ~= "" then
+          opened = true
+        end
+        local temp = {}
+        local actAbilityGroupIdx = actAbilityGroupTypes[depth1]
+        if FillCategory(actAbilityGroupIdx, temp) then
+          listboxTable[groupCount] = {}
+          listboxTable[groupCount].text = actAbilityGroupNames[depth1]
+          listboxTable[groupCount].opened = opened
+          listboxTable[groupCount].child = temp
+          groupCount = groupCount + 1
+          existCraftTypes = true
+        end
+      end
+    end
+    if not existCraftTypes then
+      local warningStr = GetUIText(COMMON_TEXT, "crafting_search_empty_result")
+      X2Chat:DispatchChatMessage(CMF_SYSTEM, warningStr)
+      AddMessageToSysMsgWindow(warningStr)
+      countList:Show(false)
+      categoryList:SetMinMaxValues("vert", 0, categoryList.content:GetMaxTop())
+      return
+    end
+    categoryList:SetItemTrees(listboxTable)
+    FillCategoriesMaxCraftCount()
+  end
+  local function SetHighRankCraftInfo(craftType, categoryType)
+    highRankCraftInfo = X2Craft:GetUpperCraftsInfo(craftType, categoryType)
+    if highRankCraftInfo ~= nil then
+      highRankFrame.pageCtrl:SetPageByItemCount(#highRankCraftInfo, 5)
+    else
+      highRankFrame.pageCtrl:SetPageByItemCount(1, 1)
+    end
+    highRankFrame.pageCtrl:MoveFirstPage()
+  end
+  local function FillHighRankCraftInfo(pageIdx, countPerPage)
+    detailPage:InitHighRankFrameItems()
+    if highRankCraftInfo == nil then
+      return
+    end
+    local startIdx = (pageIdx - 1) * countPerPage + 1
+    local iconIdx = 1
+    for i = startIdx, #highRankCraftInfo do
+      local highRankItem = highRankFrame.items[iconIdx]
+      if highRankItem ~= nil then
+        local itemInfo
+        local itemGrade = 0
+        local productInfo = productInfoFrame.item.info
+        if highRankCraftInfo[i].useGrade then
+          itemGrade = highRankCraftInfo[i].itemGrade
+        elseif highRankCraftInfo[i].mainGrade and itemGrade < productInfo.itemGrade then
+          itemGrade = productInfo.itemGrade
+        elseif highRankCraftInfo[i].item_impl ~= nil and highRankCraftInfo[i].item_impl == productInfo.item_impl and itemGrade < productInfo.itemGrade then
+          itemGrade = productInfo.itemGrade
+        end
+        itemInfo = X2Item:GetItemInfoByType(highRankCraftInfo[i].itemType, itemGrade)
+        highRankItem.craftType = highRankCraftInfo[i].craft_Type
+        local baseInfo = {}
+        baseInfo.ac_type = highRankCraftInfo[i].ac_type
+        local craftSearch = searchBar.conditionRadio:GetChecked() == CRAFT_SEARCH_CONDITION.PRODUCT
+        local matchDoodad, _, _ = IsPossibleCraft(highRankItem.craftType, baseInfo.ac_type, materialFrame.mileageCount, searchKeyword, craftSearch)
+        highRankItem:SetItemInfo(itemInfo)
+        highRankItem:SetReadingGlassIcon(itemInfo.name)
+		AddAuctionSearchIconBtn(highRankItem.readingGlassIconBtn, itemInfo.name)
+        if matchDoodad or not craftInfoRenewal.isDoodadCrafting then
+          highRankItem:SetNormalColor(1, 1, 1, 1)
+          highRankItem:SetPushedColor(1, 1, 1, 1)
+          highRankItem:SetHighlightColor(1, 1, 1, 1)
+          highRankItem:SetDisabledColor(1, 1, 1, 1)
+        else
+          highRankItem:SetNormalColor(0.5, 0.5, 0.5, 1)
+          highRankItem:SetPushedColor(0.5, 0.5, 0.5, 1)
+          highRankItem:SetHighlightColor(0.5, 0.5, 0.5, 1)
+          highRankItem:SetDisabledColor(0.5, 0.5, 0.5, 1)
+        end
+      else
+        return
+      end
+      iconIdx = iconIdx + 1
+    end
+  end
+  function highRankFrame.pageCtrl:ProcOnPageChanged(pageIndex, countPerPage)
+    FillHighRankCraftInfo(pageIndex, countPerPage)
+  end
+  function highRankFrame.combobox:SelectedProc(selIndex)
+    if selIndex == nil then
+      selIndex = self:GetSelectedIndex()
+    end
+    local idx = self.categoryIdxs[selIndex]
+    if idx == nil then
+      return
+    end
+    SetHighRankCraftInfo(curCraftType, idx)
+  end
+  local function SearchFunc()
+    searchKeyword = searchBar.editbox:GetText()
+    FillCategories(selActAbilityGroupIdx)
+  end
+  searchBar.editbox:SetHandler("OnEnterPressed", SearchFunc)
+  searchBar.searchButton:SetHandler("OnClick", SearchFunc)
+  local function FillCraftActability(info)
+    if curCraftType == 0 then
+      return
+    end
+    if info == nil then
+      info = X2Craft:GetCraftBaseInfo(curCraftType)
+    end
+    local requireActability = productInfoFrame.requireActability
+    requireActability:Show(false)
+    if info.actability_satisfied then
+      ApplyTextColor(requireActability, FONT_COLOR.DEFAULT)
+    else
+      ApplyTextColor(requireActability, FONT_COLOR.RED)
+    end
+    local demendedActabilityStr = ""
+    if info.required_actability_point ~= nil and 0 < info.required_actability_point then
+      requireActability:Show(true)
+      local myAcInfo = X2Ability:GetMyActabilityInfo(info.required_actability_type)
+      if myAcInfo ~= nil then
+        local point = myAcInfo.point + myAcInfo.modifyPoint
+        demendedActabilityStr = string.format("%s%s %d/%d", GetUIText(CRAFT_TEXT, "require_mastery"), info.required_actability_name, point, info.required_actability_point)
+      else
+        demendedActabilityStr = string.format("%s%s %d", GetUIText(CRAFT_TEXT, "require_mastery"), info.required_actability_name, info.required_actability_point)
+      end
+    end
+    requireActability:SetText(demendedActabilityStr)
+  end
+  local function FillCraftRequireLaborPower(info)
+    if curCraftType == 0 then
+      return
+    end
+    if info == nil then
+      info = X2Craft:GetCraftBaseInfo(curCraftType)
+    end
+    local requireLaborPower = productInfoFrame.requireLaborPower
+    if info.laborpower_satisfied then
+      if info.consume_lp > info.needed_lp then
+        ApplyTextColor(requireLaborPower, FONT_COLOR.GREEN)
+      else
+        ApplyTextColor(requireLaborPower, FONT_COLOR.DEFAULT)
+      end
+    else
+      ApplyTextColor(requireLaborPower, FONT_COLOR.RED)
+    end
+    local laborPowerStr = string.format("%s%d", GetUIText(CRAFT_TEXT, "require_labor_power"), info.needed_lp)
+    requireLaborPower:Show(true)
+    requireLaborPower:SetText(laborPowerStr)
+  end
+  local function EnableCraftButtonFrame(enable, possibleCancel)
+    buttonFrame.spinner:SetEnable(enable)
+    buttonFrame.maxCraftBtn:Enable(enable)
+    buttonFrame.craftBtn:Enable(enable)
+    buttonFrame.cancelBtn:Enable(possibleCancel)
+  end
+  local function FillDetailPageCraftInfo(craftType)
+    local baseInfo = X2Craft:GetCraftBaseInfo(craftType)
+    local materialInfos = X2Craft:GetCraftMaterialInfo(craftType)
+    if materialInfos == nil then
+      return
+    end
+    local productInfos = X2Craft:GetCraftProductInfo(craftType)
+    if productInfos == nil or #productInfos == 0 then
+      return
+    end
+    local materialSatisfied = true
+    for i = 1, #materialInfos do
+      local minfo = materialInfos[i]
+      if minfo.item_info.itemType ~= MILEAGE_ITEM_TYPE then
+        local item = materialFrame.items[i]
+        local stack = materialFrame.items[i].stack
+        item:SetItemInfo(minfo.item_info)
+        item:SetReadingGlassIcon(minfo.item_info.name)
+		AddAuctionSearchIconBtn(item.readingGlassIconBtn, minfo.item_info.name)
+        item.itemType = minfo.item_info.itemType
+        local countStr = string.format("%s/%s", tostring(minfo.count), tostring(minfo.amount))
+        stack:SetText(countStr)
+        if minfo.count >= minfo.amount then
+          ApplyTextColor(stack, FONT_COLOR.WHITE)
+          item:SetNormalColor(1, 1, 1, 1)
+          item:SetPushedColor(1, 1, 1, 1)
+          item:SetHighlightColor(1, 1, 1, 1)
+          item:SetDisabledColor(1, 1, 1, 1)
+        else
+          ApplyTextColor(stack, FONT_COLOR.RED)
+          item:SetNormalColor(0.5, 0.5, 0.5, 1)
+          item:SetPushedColor(0.5, 0.5, 0.5, 1)
+          item:SetHighlightColor(0.5, 0.5, 0.5, 1)
+          item:SetDisabledColor(0.5, 0.5, 0.5, 1)
+          materialSatisfied = false
+        end
+      else
+        materialFrame.mileageCount = minfo.amount
+      end
+    end
+    local pInfo = productInfos[1]
+    local itemInfo = X2Item:GetItemInfoByType(pInfo.itemType, NORMAL_ITEM_GRADE, IIK_IMPL)
+    local itemGrade = NORMAL_ITEM_GRADE
+    if not pInfo.useGrade then
+      for i = 1, #materialFrame.items do
+        local materialItem = materialFrame.items[i]
+        if materialItem.info ~= nil then
+          if materialItem.info.mainGrade and itemGrade < materialItem.info.itemGrade then
+            itemGrade = materialItem.info.itemGrade
+          elseif materialItem.info.item_impl == itemInfo.item_impl and itemGrade < materialItem.info.itemGrade then
+            itemGrade = materialItem.info.itemGrade
+          end
+        end
+      end
+    else
+      itemGrade = pInfo.productGrade
+    end
+    itemInfo = X2Item:GetItemInfoByType(pInfo.itemType, itemGrade)
+    itemInfo.recommend_level = baseInfo.recommend_level
+    productInfoFrame.item:SetItemInfo(itemInfo)
+    productInfoFrame.item:SetReadingGlassIcon(itemInfo.name)
+    AddAuctionSearchIconBtn(productInfoFrame.item.readingGlassIconBtn, itemInfo.name)
+    local nameStr = ""
+    if itemInfo.slotType == "backpack" and itemInfo.category ~= GetUIText(AUCTION_TEXT, "item_category_glider") then
+      nameStr = string.format("[%s] %s", locale.common.equipSlotType.backpack, pInfo.item_name)
+      productInfoFrame.item:SetStack(0)
+    elseif 1 < pInfo.amount then
+      nameStr = string.format("[%s] %s", locale.common.GetAmount(pInfo.amount), pInfo.item_name)
+      productInfoFrame.item:SetStack(pInfo.amount)
+    else
+      nameStr = pInfo.item_name
+      productInfoFrame.item:SetStack(0)
+    end
+    local gradeColor = Hex2Dec(itemInfo.gradeColor)
+    productInfoFrame.name.style:SetColor(gradeColor[1], gradeColor[2], gradeColor[3], gradeColor[4])
+    productInfoFrame.name:SetText(nameStr)
+    productInfoFrame.name:SetHeight(productInfoFrame.name:GetTextHeight())
+    local craftSearch = searchBar.conditionRadio:GetChecked() == CRAFT_SEARCH_CONDITION.PRODUCT
+    local matchDoodad, mileageSatisfied = IsPossibleCraft(craftType, baseInfo.ac_type, materialFrame.mileageCount, searchKeyword, craftSearch)
+    local requireLaborPower = productInfoFrame.requireLaborPower
+    local doodadName = productInfoFrame.requireDoodad
+    local requireActability = productInfoFrame.requireActability
+    FillCraftRequireLaborPower(baseInfo)
+    FillCraftActability(baseInfo)
+    doodadName:RemoveAllAnchors()
+    if not requireActability:IsVisible() then
+      doodadName:AddAnchor("TOPLEFT", requireLaborPower, "BOTTOMLEFT", 0, 5)
+    else
+      doodadName:AddAnchor("TOPLEFT", requireActability, "BOTTOMLEFT", 0, 5)
+    end
+    if matchDoodad or craftInfoRenewal.isDoodadCrafting == false then
+      ApplyTextColor(doodadName, FONT_COLOR.DEFAULT)
+    else
+      ApplyTextColor(doodadName, FONT_COLOR.RED)
+    end
+    if baseInfo.doodad_name ~= nil then
+      demendedDoodad = string.format("%s%s", GetUIText(CRAFT_TEXT, "require_doodad"), baseInfo.doodad_name)
+    end
+    doodadName:Show(baseInfo.doodad_name ~= nil)
+    doodadName:SetText(demendedDoodad)
+    doodadName:SetHeight(doodadName:GetTextHeight())
+    if mileageSatisfied then
+      ApplyTextColor(productInfoFrame.requireMileage, FONT_COLOR.DEFAULT)
+    else
+      ApplyTextColor(productInfoFrame.requireMileage, FONT_COLOR.RED)
+    end
+    if baselibLocale.useMileage and 0 < materialFrame.mileageCount then
+      local bmmileageStr = string.format("%s: |b%s;", locale.bmmileage.bmmileage, tostring(materialFrame.mileageCount))
+      productInfoFrame.requireMileage:Show(true)
+      productInfoFrame.requireMileage:SetText(bmmileageStr)
+    else
+      productInfoFrame.requireMileage:Show(false)
+    end
+    local enable = matchDoodad and mileageSatisfied and baseInfo.laborpower_satisfied and baseInfo.actability_satisfied and materialSatisfied and not X2Craft:IsWorkingCraft()
+    EnableCraftButtonFrame(enable, X2Craft:IsWorkingCraft())
+  end
+  local function FillCraftButtonFrame(craftType)
+    if not craftInfoRenewal.isDoodadCrafting then
+      return
+    end
+    local count = X2Craft:GetLeftBatchCount()
+    if 0 < count then
+      buttonFrame.spinner:SetMinMaxValues(0, count)
+      buttonFrame.spinner:SetText(tostring(count))
+      return
+    end
+    count = 0
+    if craftType ~= nil and 0 < craftType then
+      count = X2Craft:GetExecutableCraftCount(craftType)
+      buttonFrame.spinner:SetMinMaxValues(0, count)
+      if 0 < count then
+        count = 1
+      else
+        count = 0
+      end
+    end
+    buttonFrame.spinner:SetText(tostring(count))
+  end
+  local function FillDetailPage(craftType)
+    curCraftType = craftType
+    detailPage:Init()
+    FillDetailPageCraftInfo(craftType)
+    SetHighRankCraftInfo(craftType, highRankFrame.combobox.categoryIdxs[CRAFT_ALL_CATEGORY])
+    highRankFrame.combobox:Select(CRAFT_ALL_CATEGORY)
+    highRankFrame.combobox:SelectedProc(CRAFT_ALL_CATEGORY)
+    FillCraftButtonFrame(craftType)
+  end
+  local function FillSpinner(self, count)
+    if curCraftType == 0 then
+      return
+    end
+    if count == nil then
+      count = X2Craft:GetExecutableCraftCount(curCraftType)
+    end
+    buttonFrame.spinner:SetMinMaxValues(0, count)
+    buttonFrame.spinner:SetText(tostring(count))
+  end
+  ButtonOnClickHandler(buttonFrame.maxCraftBtn, FillSpinner)
+  local function CraftBtnLeftClickFunc()
+    if curCraftType == 0 then
+      return
+    end
+    local doodadId = craftInfoRenewal:GetDoodadId()
+    local count = tonumber(buttonFrame.spinner:GetCurValue())
+    local playerLevel = X2Unit:UnitLevel("player")
+    local productItemInfo = productInfoFrame.item.info
+    local recommendLevel = productItemInfo.recommend_level
+    if recommendLevel == nil then
+      X2Craft:ExecuteBatchCraftByType(curCraftType, doodadId, count)
+    elseif playerLevel < recommendLevel then
+      local function DialogHandler(wnd)
+        ApplyDialogStyle(wnd, DIALOG_STYLE.INCLUDE_ITEM_ICON)
+        wnd:SetTitle(GetUIText(MSG_BOX_TITLE_TEXT, "warning_craft_title"))
+        wnd.btnOk:SetText(craftingLocale.dialogOkButtonText)
+        local content = GetUIText(MSG_BOX_TITLE_TEXT, "warning_craft_body")
+        local itemContent
+        local function MakeMessage(gradeColor, name, recommendLevel)
+          itemContent = string.format([[
+|c%s[%s]
+%s%s %d]], gradeColor, name, FONT_COLOR_HEX.RED, locale.craft.recommendLevel, recommendLevel)
+        end
+        MakeMessage(productItemInfo.gradeColor, productItemInfo.name, recommendLevel)
+        wnd:SetContentEx(content, productItemInfo, nil, itemContent)
+        function wnd:OkProc()
+          X2Craft:ExecuteBatchCraftByType(curCraftType, doodadId, count)
+        end
+      end
+      X2DialogManager:RequestDefaultDialog(DialogHandler, window:GetId())
+    else
+      X2Craft:ExecuteBatchCraftByType(curCraftType, doodadId, count)
+    end
+  end
+  ButtonOnClickHandler(buttonFrame.craftBtn, CraftBtnLeftClickFunc)
+  local CraftCancelBtnLeftClickFunc = function()
+    X2Craft:StopBatchCrafting()
+  end
+  ButtonOnClickHandler(buttonFrame.cancelBtn, CraftCancelBtnLeftClickFunc)
+  for i = 1, #highRankFrame.items do
+    local item = highRankFrame.items[i]
+    item.craftType = nil
+    function item:OnClickProc(arg)
+      if arg ~= "LeftButton" then
+        return
+      end
+      if self.craftType == nil then
+        return
+      end
+      HideTooltip()
+	  item.readingGlassIconBtn:Enable(false)
+	  item.readingGlassIconBtn:Show(false)
+      FillDetailPage(self.craftType)
+    end
+  end
+  for i = 1, #materialFrame.items do
+    local item = materialFrame.items[i]
+    item.craftType = nil
+    function item:OnClickProc(arg)
+      if arg ~= "LeftButton" then
+        return
+      end
+      if self.itemType == nil then
+        return
+      end
+      HideTooltip()
+      local craftType = X2Craft:GetCraftTypeByItemType(self.itemType)
+      if craftType == nil then
+        return
+      end
+	  item.readingGlassIconBtn:Enable(false)
+	  item.readingGlassIconBtn:Show(false)
+      FillDetailPage(craftType)
+    end
+  end
+  local function ResetBtnLeftClickFunc()
+    searchBar.editbox:SetText("")
+    searchKeyword = ""
+    if abilityGroupPage:IsVisible() then
+      abilityGroupPage:Show(true)
+      detailPage:Show(false)
+      searchBar.combobox:Select(CRAFT_ALL_CATEGORY)
+      selActAbilityGroupIdx = 0
+    else
+      FillCategories(selActAbilityGroupIdx)
+      detailPage:Init()
+    end
+  end
+  ButtonOnClickHandler(searchBar.resetBtn, ResetBtnLeftClickFunc)
+  function detailPage.categoryList:OnSelChanged()
+    local index = self.content:GetSelectedIndex()
+    if index == 0 or index == -1 then
+      return
+    end
+    local value = self.content:GetSelectedValue()
+    if value == 0 then
+      return
+    end
+    FillDetailPage(value)
+  end
+  local function BackPageButtonLeftClickFunc(self)
+    selActAbilityGroupIdx = 0
+    searchKeyword = ""
+    abilityGroupPage:Show(true)
+    detailPage:Show(false)
+    detailPage:Init()
+    curCraftType = 0
+    searchBar.editbox:SetText("")
+    searchBar.combobox:Select(CRAFT_ALL_CATEGORY)
+  end
+  ButtonOnClickHandler(detailPage.backPageBtn, BackPageButtonLeftClickFunc)
+  local function FillAbilityGroupPage()
+    local actAbilityGroupTypes, actAbilityGroupNames, groupIconPaths = craftInfoRenewal:GetActAbilitysGroups()
+    if actAbilityGroupTypes == nil or actAbilityGroupNames == nil then
+      return
+    end
+    local colLineFeed = 6
+    local function GetOffset(button, index)
+      index = index - 1
+      local xOffset, yOffset = craftingLocale.abilityGroup.btnStartOffset, 0
+      local betweenOffsetX = craftingLocale.abilityGroup.btnOffsetX
+      local count = index % colLineFeed
+      if count == 0 then
+        xOffset = craftingLocale.abilityGroup.btnStartOffset
+      else
+        xOffset = (button:GetWidth() + betweenOffsetX) * count
+      end
+      yOffset = (button:GetHeight() + sideMargin * 1.7) * math.floor(index / colLineFeed)
+      return xOffset, yOffset
+    end
+    local function GetAbilityButton(index)
+      if index == nil then
+        return
+      end
+      if abilityGroupPage.buttons == nil then
+        abilityGroupPage.buttons = {}
+      end
+      if abilityGroupPage.buttons[index] == nil then
+        local button = abilityGroupPage:CreateActabilityButton(string.format("buttons[%d]", index), abilityGroupPage)
+        local xOffset, yOffset = GetOffset(button, index)
+        button:AddAnchor("TOPLEFT", abilityGroupPage, xOffset, yOffset)
+        abilityGroupPage.buttons[index] = button
+        return button
+      else
+        return abilityGroupPage.buttons[index]
+      end
+    end
+    if abilityGroupPage.buttons ~= nil then
+      for i = 1, #abilityGroupPage.buttons do
+        abilityGroupPage.buttons[i]:Show(false)
+      end
+    end
+    for i = 1, #actAbilityGroupTypes do
+      local button = GetAbilityButton(i)
+      button:Show(true)
+      button:SetButtonInfo(actAbilityGroupNames[i], groupIconPaths[i])
+      button.actAbilityGroupIdx = actAbilityGroupTypes[i]
+      local function LeftClickFunc(self)
+        FillCategories(self.actAbilityGroupIdx)
+      end
+      ButtonOnClickHandler(button, LeftClickFunc)
+    end
+  end
+  function window:FillCraft(isCraftStart)
+    if isCraftStart then
+      local enableActabilityGroups = craftInfoRenewal:GetCurDoodadEnableActabilityGroups()
+      if 1 < #enableActabilityGroups then
+        self.detailPage:Show(false)
+        self.abilityGroupPage:Show(true)
+      else
+        self.detailPage:Show(true)
+        self.abilityGroupPage:Show(false)
+        FillCategories(enableActabilityGroups[1])
+      end
+    else
+      craftInfoRenewal.isDoodadCrafting = false
+      self.abilityGroupPage:Show(true)
+      self.detailPage:Show(false)
+    end
+    searchBar.conditionRadio:Check(CRAFT_SEARCH_CONDITION.PRODUCT)
+    FillCategoryCombobox(craftInfoRenewal.isDoodadCrafting)
+    FillAbilityGroupPage()
+    self.detailPage.buttonFrame:Show(isCraftStart)
+    EnableCraftButtonFrame(false, false)
+  end
+  local function IsActivatedCraftingInteraction()
+    if window:IsVisible() and craftInfoRenewal:GetDoodadId() ~= 0 then
+      return true
+    end
+    return false
+  end
+  local events = {
+    CRAFTING_START = function(doodadId, count)
+      if CheckExclusiveUI(GROUP_BAG_SHARE, UI_KIND_CRAFT, IsActivatedCraftingInteraction) then
+        return false
+      end
+      window:Show(false)
+      craftInfoRenewal:SetDoodad(doodadId, count)
+      if craftInfoRenewal:GetDoodadId() == 0 then
+        window:SetTitle(locale.craft.craftBook)
+      else
+        window:SetTitle(locale.craft.make)
+      end
+      window:FillCraft(craftInfoRenewal.isDoodadCrafting)
+      window:Show(true)
+    end,
+    BAG_UPDATE = function(bagId, slotId)
+      if bagId ~= -1 or slotId ~= -1 then
+        return
+      end
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      if curCraftType == 0 then
+        return
+      end
+      FillDetailPage(curCraftType)
+      FillCategoriesMaxCraftCount()
+    end,
+    CRAFT_STARTED = function(leftCount)
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      EnableCraftButtonFrame(false, true)
+      buttonFrame.spinner:ClearFocus()
+      if leftCount < 1 then
+        return
+      end
+      FillSpinner(nil, leftCount)
+    end,
+    CRAFT_ENDED = function(leftCount)
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      if curCraftType == nil then
+        buttonFrame.spinner:SetMinMaxValues(0, 0)
+        return
+      end
+      if leftCount ~= nil then
+        FillSpinner()
+        buttonFrame.spinner:SetText(tostring(leftCount))
+      else
+        buttonFrame.spinner:SetMinMaxValues(0, X2Craft:GetExecutableCraftCount(curCraftType))
+        EnableCraftButtonFrame(true, false)
+      end
+    end,
+    INTERACTION_END = function()
+      if craftInfoRenewal:GetDoodadId() == 0 then
+        return
+      end
+      window:Show(false)
+    end,
+    LABORPOWER_CHANGED = function()
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      if curCraftType == 0 then
+        return
+      end
+      FillCraftRequireLaborPower()
+    end,
+    ACTABILITY_EXPERT_CHANGED = function(actabilityId)
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      if actabilityId ~= selActAbilityGroupIdx then
+        return
+      end
+      FillCraftActability()
+    end,
+    CHANGE_ACTABILITY_DECO_NUM = function()
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      FillCraftActability()
+    end,
+    ACTABILITY_MODIFIER_UPDATE = function()
+      if not window:IsVisible() then
+        return
+      end
+      if not window.detailPage:IsVisible() then
+        return
+      end
+      FillCraftActability()
+    end
+  }
+  window:SetHandler("OnEvent", function(this, event, ...)
+    events[event](...)
+  end)
+  RegistUIEvent(window, events)
+  local function OnHide()
+    curCraftType = 0
+    selActAbilityGroupIdx = 0
+    highRankCraftInfo = nil
+    detailPage:Init()
+    searchKeyword = ""
+    searchBar.editbox:SetText("")
+    countList:Show(false)
+  end
+  window:SetHandler("OnHide", OnHide)
+  return window
+end
+local craftFrame = CreateCraftingWindowRenewal("craftFrame", "UIParent")
+craftFrame:AddAnchor("CENTER", "UIParent", 0, 0)
+AddUISaveHandlerByKey("craftFrame", craftFrame)
+craftFrame:ApplyLastWindowOffset()
+function ToggleRecipeBook(show)
+  if show == nil then
+    show = not craftFrame:IsVisible()
+  end
+  if show then
+    craftInfoRenewal:SetDoodad(0, 0)
+    craftFrame:FillCraft(false)
+    craftFrame:Show(true)
+  else
+    craftFrame:Show(false)
+  end
+end
+ADDON:RegisterContentTriggerFunc(UIC_CRAFT_BOOK, ToggleRecipeBook)
