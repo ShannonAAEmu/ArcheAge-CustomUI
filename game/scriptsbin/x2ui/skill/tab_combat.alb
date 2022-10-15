@@ -1,0 +1,520 @@
+local MAX_ABILITY_TYPE = 10
+local MAX_ABILITY_COUNT = 3
+local SUB_WINDOW_GAP = 28
+local WINDOW_INSET = {
+  left = 0,
+  top = 30,
+  right = 0,
+  bottom = 0
+}
+local sideMargin, titleMargin, bottomMargin = GetWindowMargin()
+local MAX_ACTIVE_SKILL = 15
+local MAX_PASSIVE_SKILL = 8
+local ABILITY_VIEW_KIND = {
+  {ACTIVE_SKILL_1, PASSIVE_SKILL_1},
+  {ACTIVE_SKILL_2, PASSIVE_SKILL_2},
+  {ACTIVE_SKILL_3, PASSIVE_SKILL_3}
+}
+local ABILITY_REQUIRED_LEVEL = {
+  1,
+  5,
+  10
+}
+local function CreateLearnLevelRequirementWidget(id, parent, index)
+  local widget = CreateEmptyWindow(id, parent)
+  widget:SetTitleInset(0, 0, 0, 80)
+  widget:SetTitleText(locale.skill.newAbilityActivation)
+  widget.titleStyle:SetFont(FONT_PATH.DEFAULT, FONT_SIZE.XLARGE)
+  AttachAnchor(widget, parent, 0, 0)
+  ApplyTitleFontColor(widget, FONT_COLOR.DEFAULT)
+  widget:Show(false)
+  local requirement = widget:CreateChildWidget("textbox", "requirement", 0, true)
+  requirement:SetLineSpace(3)
+  ApplyTextColor(requirement, FONT_COLOR.DEFAULT)
+  AttachAnchor(requirement, widget, 0, -30)
+  local level = ABILITY_REQUIRED_LEVEL[index]
+  local str = locale.skill.GetAbilityRequirementText(level)
+  requirement:SetText(str)
+  requirement:Show(true)
+  return widget
+end
+local function CreateAbilitySelectWidget(id, parent, index)
+  local widget = CreateEmptyWindow(id, parent)
+  widget:SetTitleText(locale.skill.chooseAbility)
+  widget:SetTitleInset(0, 23, 0, 0)
+  widget.titleStyle:SetAlign(ALIGN_TOP)
+  widget.titleStyle:SetFont(FONT_PATH.DEFAULT, FONT_SIZE.LARGE)
+  ApplyTitleFontColor(widget, FONT_COLOR.TITLE)
+  AttachAnchor(widget, parent, 0, 0)
+  widget:Show(false)
+  local bg = CreateContentBackground(widget, "TYPE3")
+  bg:SetColor(0.3, 0.3, 0.3, 0.1)
+  bg:AddAnchor("TOPLEFT", widget, -sideMargin, -sideMargin)
+  bg:AddAnchor("BOTTOMRIGHT", widget, sideMargin, sideMargin * 2)
+  widget.btn = {}
+  for i = 1, MAX_ABILITY_TYPE do
+    local btn = widget:CreateChildWidget("button", "abilityBtns", i, true)
+    ApplyButtonSkin(btn, BUTTON_CONTENTS.ALL_ABILITY)
+    function btn:OnClick()
+      X2Ability:SetAbilityToView(index, btn.ability)
+      parent:Update()
+      parent:UpdateJobName()
+    end
+    btn:SetHandler("OnClick", btn.OnClick)
+    function btn:SetAbility(ability)
+      self.ability = ability
+      btn:SetText(GetAbilityName(ability))
+    end
+    function btn:SetLayout(recommend)
+      if recommend then
+        ChangeButtonSkin(self, BUTTON_CONTENTS.SKILL_ABILITY)
+      else
+        ChangeButtonSkin(self, BUTTON_CONTENTS.ALL_ABILITY)
+      end
+    end
+    widget.btn[i] = btn
+  end
+  widget.ability = {}
+  widget.recommends = {}
+  function widget:Reset()
+    for i = 1, MAX_ABILITY_TYPE do
+      self.btn[i]:Show(false)
+    end
+    self.abilities = {}
+    self.recommends = {}
+  end
+  function widget:Update()
+    self:Reset()
+    local abilities, recommendAbilities = GetSelectableAbilities()
+    local btnIdx = 1
+    for i = 1, #recommendAbilities do
+      self:SetRecommendAbilityBtn(self.btn[btnIdx], recommendAbilities[i])
+      btnIdx = btnIdx + 1
+    end
+    for i = 1, #abilities do
+      self:SetAbilityBtn(self.btn[btnIdx], abilities[i])
+      btnIdx = btnIdx + 1
+    end
+    self:SetButtonLayouts()
+  end
+  function widget:SetRecommendAbilityBtn(btn, ability)
+    table.insert(self.recommends, btn)
+    btn:SetAbility(ability)
+    btn:SetLayout(true)
+  end
+  function widget:SetAbilityBtn(btn, ability)
+    table.insert(self.abilities, btn)
+    btn:SetAbility(ability)
+    btn:SetLayout(false)
+  end
+  function widget:SetButtonLayouts()
+    skillLocale.SetAbilitySelectLayoutFunc(self)
+  end
+  return widget
+end
+local CreateConfirmWnd = function(id, parent, index)
+  local widget = parent:CreateChildWidget("emptyWidget", id, 0, true)
+  widget:Show(false)
+  local confirmLabel = widget:CreateChildWidget("textbox", "confirmLabel", 0, true)
+  confirmLabel:AddAnchor("TOP", widget, 0, 7)
+  confirmLabel:SetExtent(194, FONT_SIZE.MIDDLE)
+  confirmLabel:Show(true)
+  ApplyTextColor(confirmLabel, FONT_COLOR.SKYBLUE)
+  local confirmBtn = widget:CreateChildWidget("button", "confirmBtn", 0, true)
+  confirmBtn:Show(true)
+  confirmBtn:SetText(locale.common.ok)
+  confirmBtn:AddAnchor("BOTTOMRIGHT", widget, "BOTTOM", 0, 0)
+  ApplyButtonSkin(confirmBtn, BUTTON_BASIC.DEFAULT)
+  local cancelBtn = widget:CreateChildWidget("button", "cancelBtn", 0, true)
+  cancelBtn:Show(true)
+  cancelBtn:SetText(locale.common.cancel)
+  cancelBtn:AddAnchor("BOTTOMLEFT", widget, "BOTTOM", 0, 0)
+  ApplyButtonSkin(cancelBtn, BUTTON_BASIC.DEFAULT)
+  return widget
+end
+local function CreateActiveSkillList(id, parent, index)
+  local widget = parent:CreateChildWidget("emptywidget", id, 0, true)
+  widget:Show(false)
+  local combatLabel = widget:CreateChildWidget("label", "combatLabel", 0, true)
+  combatLabel:SetText(locale.skill.abilityButtonText)
+  combatLabel:SetAutoResize(true)
+  combatLabel:SetHeight(FONT_SIZE.LARGE)
+  combatLabel:AddAnchor("TOPLEFT", widget, 0, 0)
+  combatLabel.style:SetFontSize(FONT_SIZE.LARGE)
+  ApplyTextColor(combatLabel, FONT_COLOR.BROWN)
+  local skillBackground = CreateContentBackground(widget, "TYPE10")
+  skillBackground:AddAnchor("TOPLEFT", widget, -8, 12)
+  skillBackground:AddAnchor("BOTTOMRIGHT", widget, 2, 5)
+  ApplyTextureColor(skillBackground, TEXTURE_COLOR.TYPE9_BROWN)
+  local kind = ABILITY_VIEW_KIND[index][1]
+  widget.skillBtns = {}
+  local xOffset = 0
+  local yOffset = sideMargin
+  for i = 1, MAX_ACTIVE_SKILL do
+    local button = CreateActionSlot(widget, "active_skill", ISLOT_ABILITY_VIEW, kind + i)
+    button:Show(false)
+    button:SetExtent(ICON_SIZE.DEFAULT, ICON_SIZE.DEFAULT)
+    button:AddAnchor("TOPLEFT", widget, xOffset, yOffset)
+	AddSynergyOverImage(button)
+	AddToSynergyInformer(button)
+    function button:OnEnter()
+      local info = self:GetTooltip()
+      if info ~= nil then
+        ShowTooltip(info, self)
+		ShowSynergy(info)
+      end
+    end
+    button:SetHandler("OnEnter", button.OnEnter)
+    function button:OnLeave()
+      HideTooltip()
+	  HideSynergy()
+    end
+    button:SetHandler("OnLeave", button.OnLeave)
+    widget.skillBtns[i] = button
+    xOffset = xOffset + 48
+    if i % 4 == 0 then
+      xOffset = 0
+      yOffset = yOffset + 48
+    end
+  end
+  widget:SetHeight(yOffset)
+  function widget:Update()
+    local count = X2Ability:GetAbilitySlotCount(kind)
+    for i = 1, MAX_ACTIVE_SKILL do
+      local button = widget.skillBtns[i]
+      if i <= count then
+        button:EstablishSlot(ISLOT_ABILITY_VIEW, kind + i)
+        button.useView = true
+        button:Show(true)
+		AddToSynergyInformer(button)
+      else
+        button:Show(false)
+      end
+    end
+  end
+  function widget:SetPreviewMode(arg)
+    for i = 1, MAX_ACTIVE_SKILL do
+      local button = widget.skillBtns[i]
+      button.onlyView = arg
+    end
+  end
+  return widget
+end
+local function CreatePassiveSkillList(id, parent, index)
+  local widget = parent:CreateChildWidget("emptywidget", id, 0, true)
+  widget:Show(false)
+  local buffLabel = widget:CreateChildWidget("label", "buffLabel", 0, true)
+  buffLabel:SetText(locale.skill.continue)
+  buffLabel:SetAutoResize(true)
+  buffLabel:SetHeight(FONT_SIZE.LARGE)
+  buffLabel:AddAnchor("TOPLEFT", widget, 0, 0)
+  buffLabel.style:SetFontSize(FONT_SIZE.LARGE)
+  ApplyTextColor(buffLabel, FONT_COLOR.BROWN)
+  local skillBackground = CreateContentBackground(widget, "TYPE10")
+  skillBackground:AddAnchor("TOPLEFT", widget, -8, 12)
+  skillBackground:AddAnchor("BOTTOMRIGHT", widget, 2, 5)
+  ApplyTextureColor(skillBackground, TEXTURE_COLOR.TYPE10_BLUE)
+  local kind = ABILITY_VIEW_KIND[index][2]
+  widget.lines = {}
+  for i = 1, MAX_PASSIVE_SKILL / 4 do
+    local line = CreateLine(widget, "TYPE2", "background")
+    widget.lines[i] = line
+  end
+  widget.skillBtns = {}
+  local xOffset = 0
+  local yOffset = sideMargin
+  for i = 1, MAX_PASSIVE_SKILL do
+    local button = CreateActionSlot(widget, "active_skill", ISLOT_ABILITY_VIEW, kind + i)
+    button:Show(false)
+    button:SetExtent(ICON_SIZE.DEFAULT, ICON_SIZE.DEFAULT)
+    button:AddAnchor("TOPLEFT", widget, xOffset, yOffset)
+    function button:OnEnter()
+      local info = self:GetTooltip()
+      if info ~= nil then
+        ShowTooltip(info, self)
+      end
+    end
+    button:SetHandler("OnEnter", button.OnEnter)
+    function button:OnLeave()
+      HideTooltip()
+    end
+    button:SetHandler("OnLeave", button.OnLeave)
+    widget.skillBtns[i] = button
+    xOffset = xOffset + 48
+    if i % 4 == 0 then
+      xOffset = 0
+      yOffset = yOffset + 48
+    end
+  end
+  widget:SetHeight(yOffset)
+  function widget:Update()
+    local count = X2Ability:GetAbilitySlotCount(kind)
+    local last = widget.skillBtns[1]
+    for i = 1, MAX_PASSIVE_SKILL do
+      local button = widget.skillBtns[i]
+      if i <= count then
+        button:EstablishSlot(ISLOT_ABILITY_VIEW, kind + i)
+        button:Show(true)
+        last = button
+      else
+        button:Show(false)
+      end
+    end
+    local startIndex = 1
+    local divideIndex = 4
+    for i = 1, #self.lines do
+      local startTarget = self.skillBtns[startIndex]
+      local endTarget = self.skillBtns[i * divideIndex]
+      if startTarget ~= nil and endTarget ~= nil then
+        self.lines[i]:AddAnchor("LEFT", startTarget, 0, 0)
+        if not endTarget:IsVisible() then
+          endTarget = self.skillBtns[i * divideIndex - 1]
+        end
+        self.lines[i]:AddAnchor("RIGHT", endTarget, 0, 0)
+        self.lines[i]:SetCoords(0, 0, self.lines[i]:GetWidth(), 5)
+      end
+      startIndex = startIndex + i * divideIndex
+    end
+  end
+  function widget:SetPreviewMode(arg)
+    for i = 1, MAX_PASSIVE_SKILL do
+      local button = widget.skillBtns[i]
+      button.onlyView = arg
+    end
+  end
+  return widget
+end
+local function CreateAbilityViewWidget(id, parent, index)
+  local widget = CreateEmptyWindow(id, parent)
+  widget:SetTitleInset(0, 23, 0, 0)
+  widget.titleStyle:SetAlign(ALIGN_TOP)
+  widget.titleStyle:SetFont(FONT_PATH.DEFAULT, FONT_SIZE.LARGE)
+  ApplyTitleFontColor(widget, FONT_COLOR.TITLE)
+  AttachAnchor(widget, parent, 0, 0)
+  widget:Show(false)
+  local abilityBar = CreateSkillWindow("abilityBar", widget)
+  abilityBar:Show(false)
+  abilityBar:AddAnchor("TOPLEFT", widget, 0, sideMargin / 2)
+  abilityBar:AddAnchor("TOPRIGHT", widget, 0, sideMargin / 2)
+  widget.abilityBar = abilityBar
+  local resetBtn = widget:CreateChildWidget("button", "resetBtn", 0, true)
+  resetBtn:Show(false)
+  resetBtn:AddAnchor("BOTTOM", widget, 0, 0)
+  ApplyButtonSkin(resetBtn, BUTTON_ICON.SKILL_RESET)
+  SetButtonTooltip(resetBtn, locale.icon_shape_button_tooltip.resetSkill)
+  widget.resetBtn = resetBtn
+  local confirmWnd = CreateConfirmWnd("confirmWnd", widget, index)
+  confirmWnd:AddAnchor("TOPLEFT", widget, "BOTTOMLEFT", 0, -65)
+  confirmWnd:AddAnchor("BOTTOMRIGHT", widget, "BOTTOMRIGHT", 0, 0)
+  widget.confirmWnd = confirmWnd
+  local activeSkillWnd = CreateActiveSkillList("activeSkillWnd", widget, index)
+  activeSkillWnd:AddAnchor("TOPLEFT", widget, 3, 50)
+  activeSkillWnd:AddAnchor("TOPRIGHT", widget, 0, 50)
+  widget.activeSkillWnd = activeSkillWnd
+  local passiveSkillWnd = CreatePassiveSkillList("passiveSkillWnd", widget, index)
+  passiveSkillWnd:AddAnchor("TOPLEFT", activeSkillWnd, "BOTTOMLEFT", 0, 5)
+  passiveSkillWnd:AddAnchor("TOPRIGHT", activeSkillWnd, "BOTTOMRIGHT", 0, 5)
+  widget.passiveSkillWnd = passiveSkillWnd
+  local onlyView = false
+  function widget:SetPreviewMode(arg)
+    self.abilityBar:Show(not arg)
+    self.resetBtn:Show(not arg)
+    self:SetTitleText(arg and locale.skill.chooseAbility or "")
+    self.confirmWnd:Show(arg)
+    self.activeSkillWnd:SetPreviewMode(arg)
+    self.passiveSkillWnd:SetPreviewMode(arg)
+    onlyView = arg
+  end
+  function widget:Update()
+    local ability = X2Ability:GetAbilityFromView(index)
+    if onlyView then
+      local askText = locale.skill.GetAskSelectAbilityText(GetAbilityName(ability))
+      self.confirmWnd.confirmLabel:SetText(askText)
+    else
+      self:UpdateAbilityExp()
+    end
+    self.activeSkillWnd:Update()
+    self.activeSkillWnd:Show(true)
+    self.passiveSkillWnd:Update()
+    self.passiveSkillWnd:Show(true)
+  end
+  function confirmWnd.confirmBtn:OnClick()
+    local ability = X2Ability:GetAbilityFromView(index)
+    X2Ability:LearnAbility(ability)
+  end
+  confirmWnd.confirmBtn:SetHandler("OnClick", confirmWnd.confirmBtn.OnClick)
+  function confirmWnd.cancelBtn:OnClick()
+    X2Ability:SetAbilityToView(index, ABILITY_MAX)
+    parent:Update()
+    parent:UpdateJobName()
+  end
+  confirmWnd.cancelBtn:SetHandler("OnClick", confirmWnd.cancelBtn.OnClick)
+  function resetBtn:OnClick(arg)
+    if arg == "LeftButton" then
+      X2Ability:AskResetSkills(index)
+    end
+  end
+  resetBtn:SetHandler("OnClick", resetBtn.OnClick)
+  function widget.abilityBar:OnEnter()
+    local ability = X2Ability:GetAbilityFromView(index)
+    local strName = GetAbilityName(ability)
+    local _, percent, cumulatedExp, prevLevelTotalExp, nextLevelTotalExp = GetAbilityLevelExpPersent(ability)
+    local curExp = cumulatedExp - prevLevelTotalExp
+    local str = string.format("%s : %d / %d (%d%%)", strName, curExp, nextLevelTotalExp, percent)
+    SetTooltip(str, self)
+  end
+  widget.abilityBar:SetHandler("OnEnter", widget.abilityBar.OnEnter)
+  function widget.abilityBar:OnLeave()
+    HideTooltip()
+  end
+  widget.abilityBar:SetHandler("OnLeave", widget.abilityBar.OnLeave)
+  function widget:UpdateAbilityExp()
+    local ability = X2Ability:GetAbilityFromView(index)
+    if ability ~= nil then
+      local level, percent, _, _, _ = GetAbilityLevelExpPersent(ability)
+      local maxPoint, curPoint = X2Ability:GetSkillPoint(ability)
+      self.abilityBar:Update(level, ability, percent, curPoint, maxPoint)
+    end
+  end
+  return widget
+end
+local function CreateCombatSkillList(id, parent, index)
+  local wnd = CreateEmptyWindow(id .. tostring(index), parent)
+  wnd.learnLevelReq = CreateLearnLevelRequirementWidget(id .. ".learnLevel", wnd, index)
+  wnd.abilitySelect = CreateAbilitySelectWidget(id .. ".abilitySelect", wnd, index)
+  wnd.abilityView = CreateAbilityViewWidget(id .. ".abilityView", wnd, index)
+  function wnd:HideAll()
+    wnd.learnLevelReq:Show(false)
+    wnd.abilitySelect:Show(false)
+    wnd.abilityView:Show(false)
+  end
+  function wnd:UpdateJobName()
+    parent:UpdateJobName()
+  end
+  function wnd:Update()
+    self:HideAll()
+    local ability = X2Ability:GetAbilityFromView(index)
+    if ability == nil then
+      if X2Unit:UnitLevel("player") >= ABILITY_REQUIRED_LEVEL[index] then
+        if index ~= 1 and X2Ability:GetAbilityFromView(index - 1) ~= nil then
+          wnd.abilitySelect:Update()
+          wnd.abilitySelect:Show(true)
+        else
+          wnd.learnLevelReq:Show(true)
+        end
+      else
+        wnd.learnLevelReq:Show(true)
+      end
+    else
+      wnd.abilityView:SetPreviewMode(not X2Ability:IsActiveAbility(ability))
+      wnd.abilityView:Update()
+      wnd.abilityView:Show(true)
+    end
+  end
+  function wnd:UpdateAbilityExp()
+    wnd.abilityView:UpdateAbilityExp()
+  end
+  return wnd
+end
+function CreateCombatSkillWindow(id, parent)
+  local wnd = CreateEmptyWindow(id, parent)
+  parent.content = wnd
+  wnd.children = {}
+  local jobName = wnd:CreateChildWidget("label", "jobName", 0, true)
+  jobName:Show(true)
+  jobName:SetAutoResize(true)
+  skillLocale.combatTab.jobName.AddAnchor(jobName, wnd, sideMargin)
+  jobName:SetHeight(15)
+  jobName.style:SetAlign(ALIGN_RIGHT)
+  jobName.style:SetFontSize(FONT_SIZE.LARGE)
+  ApplyTextColor(jobName, FONT_COLOR.TITLE)
+  local skillPoint = wnd:CreateChildWidget("textbox", "skillPoint", 0, true)
+  skillPoint:Show(true)
+  skillPoint:AddAnchor("TOPLEFT", wnd, 0, sideMargin / 1.5)
+  skillPoint:SetExtent(skillLocale.combatTab.skillPoint.width, 15)
+  skillPoint.style:SetAlign(ALIGN_LEFT)
+  skillPoint.style:SetFontSize(FONT_SIZE.LARGE)
+  ApplyTextColor(skillPoint, FONT_COLOR.TITLE)
+  local icon = skillPoint:CreateImageDrawable(TEXTURE_PATH.SKILL, "background")
+  icon:SetCoords(205, 46, 13, 13)
+  icon:SetExtent(13, 13)
+  icon:AddAnchor("LEFT", skillPoint, "RIGHT", -4, 0)
+  for index = 1, MAX_ABILITY_COUNT do
+    local content = CreateCombatSkillList(id .. ".ability", wnd, index)
+    content:Show(true)
+    table.insert(wnd.children, content)
+  end
+  function wnd:Update()
+    local x = WINDOW_INSET.left
+    local width = (wnd:GetWidth() - (MAX_ABILITY_COUNT - 1) * SUB_WINDOW_GAP) / MAX_ABILITY_COUNT
+    local height = wnd:GetHeight() - (WINDOW_INSET.top + WINDOW_INSET.bottom)
+	ClearSynergyInformer()
+    for i = 1, MAX_ABILITY_COUNT do
+      wnd.children[i]:AddAnchor("TOPLEFT", wnd, x, WINDOW_INSET.top)
+      wnd.children[i]:SetExtent(width, height)
+      x = x + width + SUB_WINDOW_GAP
+      wnd.children[i]:Update()
+    end
+    self:UpdateJobName()
+    self:UpdateSkillPoint()
+  end
+  function wnd:UpdateJobName()
+    local ab1 = X2Ability:GetAbilityFromView(1)
+    local ab2 = X2Ability:GetAbilityFromView(2)
+    local ab3 = X2Ability:GetAbilityFromView(3)
+    local name = GetPlayerJobName(ab1, ab2, ab3)
+    self.jobName:SetText(locale.skill.GetJobText(name))
+    self.jobName:Show(true)
+  end
+  function wnd:UpdateSkillPoint()
+    local total, used = X2Ability:GetSkillPoint()
+    local count = total - used
+    self.skillPoint:SetWidth(500)
+    self.skillPoint:SetText(locale.skill.GetSkillPointText(count))
+    self.skillPoint:SetWidth(self.skillPoint:GetLongestLineWidth() + 5)
+  end
+  function wnd:UpdateAbilityExp()
+    for i = 1, MAX_ABILITY_COUNT do
+      wnd.children[i]:UpdateAbilityExp()
+    end
+  end
+  wnd.abilityEvent = {
+    ABILITY_CHANGED = function()
+      X2Ability:ResetAbilityView()
+      wnd:Update()
+    end,
+    SKILL_LEARNED = function()
+      wnd:Update()
+    end,
+    SKILL_UPGRADED = function()
+      wnd:Update()
+    end,
+    SKILLS_RESET = function()
+      wnd:Update()
+    end,
+    LEVEL_CHANGED = function(_, stringId)
+      if X2Unit:GetUnitId("player") ~= stringId then
+        return
+      end
+      wnd:Update()
+    end,
+    EXP_CHANGED = function(stringId)
+      wnd:UpdateAbilityExp()
+    end,
+    ABILITY_EXP_CHANGED = function(stringId)
+      wnd:UpdateAbilityExp()
+    end,
+    PLAYER_ABILITY_LEVEL_CHANGED = function()
+      wnd:Update()
+    end,
+    ENTERED_WORLD = function()
+      X2Ability:ResetAbilityView()
+      wnd:Update()
+    end
+  }
+  wnd:SetHandler("OnEvent", function(this, event, ...)
+    wnd.abilityEvent[event](...)
+  end)
+  RegistUIEvent(wnd, wnd.abilityEvent)
+  return wnd
+end

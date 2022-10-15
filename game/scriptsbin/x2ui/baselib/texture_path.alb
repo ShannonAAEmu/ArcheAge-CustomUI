@@ -19,6 +19,7 @@ TEXTURE_PATH = {
   CRAFT = "ui/craft.dds",
   SKILL = "ui/skill.dds",
   EXPEDITION = "ui/button/expedition.dds",
+  SKILL_SYNERGY = "ui/skill_series.dds",
   INVENTORY_DEFAULT = "ui/inventory/default.dds",
   INVENTORY_GRADE = "ui/inventory/grade_info.dds",
   ABILITY_CHANGE = "ui/button/ability_change.dds",

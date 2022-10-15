@@ -1,0 +1,112 @@
+local skillButtonList = {}
+local function SetOverColor(over, color)
+  if color == "over_blue" then
+	over:SetCoords(46, 0, 46, 51)
+  elseif color == "over_orange" then
+	over:SetCoords(0, 51, 46, 51)
+  elseif color == "over_purple" then
+	over:SetCoords(46, 51, 46, 51)
+  else
+	over:SetCoords(0, 0, 46, 51)
+  end
+end
+local function SetOverImage(button, color)
+  local over = button:CreateStateDrawable(UI_BUTTON_NORMAL, UOT_NINE_PART_DRAWABLE, BUTTON_TEXTURE_PATH.SKILL_SYNERGY, "over_overlay")
+  SetOverColor(over, color)
+  over:SetInset(6, 7, 6, 8)
+  over:AddAnchor("TOPLEFT", button, -5, -15)
+  over:AddAnchor("BOTTOMRIGHT", button, 5, 7)
+  over:SetVisible(false)
+  return over
+end
+local function SetVisibleOver(over, color)
+  SetOverColor(over, color)
+  over:SetVisible(true)
+end
+local function CreateSelfSynergies(info, selfSynergies)
+  for i = 1, #selfSynergies do
+    for j = 1, #skillButtonList do
+	  local tempButtonInfo = skillButtonList[j]:GetTooltip()
+	  if info.name == tempButtonInfo.name then
+	    SetVisibleOver(skillButtonList[j].overSynergy, "over_green")
+	  end
+	  if nil ~= tempButtonInfo.synergyIconInfo and info.name ~= tempButtonInfo.name then
+	    for k = 1, #tempButtonInfo.synergyIconInfo do
+		  if selfSynergies[i] == tempButtonInfo.synergyIconInfo[k].conditionicon then
+		    if tempButtonInfo.synergyIconInfo[k].conditionbuffkind then
+			  SetVisibleOver(skillButtonList[j].overSynergy, "over_purple")
+		    else
+			  SetVisibleOver(skillButtonList[j].overSynergy, "over_orange")
+		    end
+		  end
+	    end
+	  end
+    end
+  end
+end
+local function CreateSelfSynergyConditions(info, selfSynergyConditions)
+  for i = 1, #selfSynergyConditions do
+	for j = 1, #skillButtonList do
+		local tempButtonInfo = skillButtonList[j]:GetTooltip()
+		local tempSelfSynergies = {}
+		if nil ~= tempButtonInfo.synergyicon1 then
+		  table.insert(tempSelfSynergies, tempButtonInfo.synergyicon1)
+		end
+		if nil ~= tempButtonInfo.synergyicon2 then
+		  table.insert(tempSelfSynergies, tempButtonInfo.synergyicon2)
+		end
+		if info.name == tempButtonInfo.name then
+		  SetVisibleOver(skillButtonList[j].overSynergy, "over_green")
+		end
+		if nil ~= tempSelfSynergies and info.name ~= tempButtonInfo.name then
+		  for k = 1, #tempSelfSynergies do
+			if tempSelfSynergies[k] == selfSynergyConditions[i].conditionicon then
+			  if selfSynergyConditions[i].conditionbuffkind then
+				SetVisibleOver(skillButtonList[j].overSynergy, "over_purple")
+			  else
+				SetVisibleOver(skillButtonList[j].overSynergy, "over_blue")
+			  end
+			end
+		  end
+		end
+	  end
+  end
+end
+function AddSynergyOverImage(button)
+  button.overSynergy = SetOverImage(button, "over_green")
+end
+function AddToSynergyInformer(button)
+  local info = button:GetTooltip()
+  if nil ~= info then
+	table.insert(skillButtonList, button)
+  end
+end
+function ShowSynergy(info)
+  local selfSynergies = {}
+  local selfSynergyConditions = {}
+  if nil ~= info.synergyicon1 then
+	table.insert(selfSynergies, info.synergyicon1)
+  end
+  if nil ~= info.synergyicon2 then
+	table.insert(selfSynergies, info.synergyicon2)
+  end
+  if nil ~= info.synergyIconInfo then
+	for i = 1, #info.synergyIconInfo do
+	  table.insert(selfSynergyConditions, info.synergyIconInfo[i])
+	end
+  end
+  if nil ~= selfSynergies then
+	CreateSelfSynergies(info, selfSynergies)
+  end
+  if nil ~= selfSynergyConditions then
+	CreateSelfSynergyConditions(info, selfSynergyConditions)
+  end
+end
+function HideSynergy()
+  for i = 1, #skillButtonList do
+	skillButtonList[i].overSynergy:SetVisible(false)
+  end
+end
+function ClearSynergyInformer()
+  skillButtonList = {}
+end
